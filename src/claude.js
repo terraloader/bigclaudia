@@ -108,12 +108,17 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
     }
   });
 
-  // Parse update_instructions block and remove it from the reply
-  const updateMatch = fullText.match(/<update_instructions>([\s\S]*?)<\/update_instructions>/);
-  const update_instructions = updateMatch ? updateMatch[1].trim() : '';
-  const reply = fullText.replace(/<update_instructions>[\s\S]*?<\/update_instructions>/, '').trim();
+  // Parse update_instructions and update_crontab blocks, remove both from reply
+  const updateInstrMatch = fullText.match(/<update_instructions>([\s\S]*?)<\/update_instructions>/);
+  const updateCrontabMatch = fullText.match(/<update_crontab>([\s\S]*?)<\/update_crontab>/);
+  const update_instructions = updateInstrMatch ? updateInstrMatch[1].trim() : '';
+  const update_crontab = updateCrontabMatch ? updateCrontabMatch[1].trim() : null;
+  const reply = fullText
+    .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/, '')
+    .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/, '')
+    .trim();
 
-  return { reply, update_instructions };
+  return { reply, update_instructions, update_crontab };
 }
 
 // ─── Summarization ────────────────────────────────────────────────────────────

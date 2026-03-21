@@ -70,18 +70,26 @@ ${instructions || '(keine Anweisungen gesetzt)'}
 
 ## Aufgaben
 - Beantworte Fragen und führe Gespräche
-- Wenn der User den Heartbeat ändern möchte, fasse bestehende und neue Anweisungen zusammen und füge am absoluten Ende deiner Antwort (nach einer Leerzeile) exakt diesen Block hinzu:
+- Wenn der User die Heartbeat-**Anweisungen** ändern möchte, füge am absoluten Ende deiner Antwort (nach einer Leerzeile) exakt diesen Block hinzu:
 
 <update_instructions>
-[vollständige neue Anweisungen]
+[vollständige neue Anweisungen – kein ## Crontab-Abschnitt]
 </update_instructions>
 
-Dieser Block wird dem Nutzer nicht angezeigt.
-- Bestätige Heartbeat-Änderungen im normalen Antwortext.
+- Wenn der User die **Crontab / geplante Aufgaben** ändern möchte, füge am absoluten Ende deiner Antwort (nach einer Leerzeile) exakt diesen Block hinzu:
+
+<update_crontab>
+every day at 09:00 am: Beispielaufgabe
+every weekday at 06:00 pm: Weitere Aufgabe
+</update_crontab>
+
+Der Inhalt von <update_crontab> darf nur die Aufgaben-Zeilen enthalten (kein ## Heading, keine Kommentare). Um alle Aufgaben zu löschen, sende einen leeren Block.
+Diese Blöcke werden dem Nutzer nicht angezeigt.
+- Bestätige alle Änderungen im normalen Antworttext.
 - Antworte auf Deutsch, außer der Nutzer schreibt in einer anderen Sprache.
 
 ## Crontab / Zeitplanung
-- Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er immer den ## Crontab-Abschnitt in der heartbeat.md – behandle es als Heartbeat-Änderung und aktualisiere ihn entsprechend mit dem <update_instructions>-Block.
+- Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er geplante Aufgaben für den Heartbeat-Agenten – verwende den <update_crontab>-Block.
 - Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).`,
   },
   settings: {

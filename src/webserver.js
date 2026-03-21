@@ -267,6 +267,8 @@ function getHTML(ui) {
   @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
   .msg-bubble.streaming { position: relative; overflow: hidden; }
   .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translateX(-100%); animation:shimmer 1.8s ease-in-out infinite; pointer-events:none; }
+  [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); } }
 
   /* Chat input */
   .chat-input-area { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--bg2); flex-shrink: 0; }
