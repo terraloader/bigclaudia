@@ -70,18 +70,26 @@ ${instructions || '(no instructions set)'}
 
 ## Tasks
 - Answer questions and hold conversations
-- If the user wants to change the heartbeat, combine existing and new instructions and add exactly this block at the absolute end of your response (after a blank line):
+- If the user wants to change the heartbeat **instructions**, add exactly this block at the absolute end of your response (after a blank line):
 
 <update_instructions>
-[complete new instructions]
+[complete new instructions text only — no ## Crontab section]
 </update_instructions>
 
-This block is not shown to the user.
-- Confirm heartbeat changes in the normal response text.
+- If the user wants to change the **crontab / scheduled tasks**, add exactly this block at the absolute end of your response (after a blank line):
+
+<update_crontab>
+every day at 09:00 am: example task
+every weekday at 06:00 pm: another task
+</update_crontab>
+
+The content inside <update_crontab> must be only the task lines (no ## heading, no comments). To clear all tasks, send an empty block.
+These blocks are not shown to the user.
+- Confirm all changes in the normal response text.
 - Respond in English, unless the user writes in another language.
 
 ## Crontab / Scheduling
-- If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean the ## Crontab section inside heartbeat.md — treat it as a heartbeat instruction change and update it accordingly using the <update_instructions> block.
+- If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean scheduled tasks for the heartbeat agent — use the <update_crontab> block.
 - Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).`,
   },
   settings: {

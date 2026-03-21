@@ -5,10 +5,6 @@ const HEARTBEAT_FILE = path.join(__dirname, '..', 'heartbeat.md');
 const HEARTBEAT_EXAMPLE_FILE = path.join(__dirname, '..', 'heartbeat.md.example');
 const MAX_SIZE = parseInt(process.env.HEARTBEAT_MAX_SIZE || '50000', 10);
 
-const INSTRUCTIONS_START = '## Instructions';
-const INSTRUCTIONS_COMMENT_END = '-->';
-const HISTORY_START = '## History';
-const HISTORY_COMMENT_END = '-->';
 
 /**
  * Creates heartbeat.md from heartbeat.md.example if it does not exist.
@@ -25,7 +21,7 @@ async function initHeartbeat() {
 }
 
 /**
- * Reads heartbeat.md and extracts instructions and history.
+ * Reads heartbeat.md and extracts instructions, crontab section, and history in one read.
  */
 async function readHeartbeat() {
   const content = await fs.readFile(HEARTBEAT_FILE, 'utf-8');
@@ -33,35 +29,25 @@ async function readHeartbeat() {
   const instructionsMatch = content.match(
     /## Instructions\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)(?=\n## |$)/
   );
+  const crontabMatch = content.match(
+    /\n(## Crontab[\s\S]*?)(?=\n## History|$)/
+  );
   const historyMatch = content.match(
     /## History\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)$/
   );
 
   const instructions = instructionsMatch ? instructionsMatch[1].trim() : '';
+  const crontabRaw = crontabMatch ? '\n\n' + crontabMatch[1].trimEnd() : '';
   const history = historyMatch ? historyMatch[1].trim() : '';
 
-  return { instructions, history, raw: content };
-}
-
-/**
- * Extracts the raw ## Crontab section (including heading) to preserve it during writes.
- */
-async function getCrontabRaw() {
-  try {
-    const content = await fs.readFile(HEARTBEAT_FILE, 'utf-8');
-    const match = content.match(/\n(## Crontab[\s\S]*?)(?=\n## History|$)/);
-    return match ? '\n\n' + match[1].trimEnd() : '';
-  } catch {
-    return '';
-  }
+  return { instructions, crontabRaw, history, raw: content };
 }
 
 /**
  * Appends a new entry to the history in heartbeat.md.
  */
 async function appendToHistory(summary) {
-  const { instructions, history } = await readHeartbeat();
-  const crontabRaw = await getCrontabRaw();
+  const { instructions, crontabRaw, history } = await readHeartbeat();
   const timestamp = new Date().toISOString();
   const newEntry = `\n### ${timestamp}\n${summary}\n`;
   const updatedHistory = history + newEntry;
@@ -73,8 +59,7 @@ async function appendToHistory(summary) {
 /**
  * Overwrites heartbeat.md completely (after summarization).
  */
-async function writeHeartbeat(instructions, summarizedHistory) {
-  const crontabRaw = await getCrontabRaw();
+async function writeHeartbeat(instructions, summarizedHistory, crontabRaw = '') {
   const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n\n${summarizedHistory}\n`;
   await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
 }
@@ -99,9 +84,23 @@ async function getFileSize() {
  * Replaces only the instructions section, leaving history unchanged.
  */
 async function updateInstructions(newInstructions) {
-  const { history } = await readHeartbeat();
-  const crontabRaw = await getCrontabRaw();
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${newInstructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
+  const { crontabRaw, history } = await readHeartbeat();
+  // Strip any ## Crontab section Claude may have included in newInstructions
+  // to prevent duplication (the existing one is preserved via crontabRaw).
+  const pureInstructions = newInstructions.replace(/\n*## Crontab[\s\S]*$/, '').trim();
+  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${pureInstructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
+  await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
+}
+
+/**
+ * Replaces only the crontab section, leaving instructions and history unchanged.
+ */
+async function updateCrontab(newCrontabContent) {
+  const { instructions, history } = await readHeartbeat();
+  const crontabRaw = newCrontabContent.trim()
+    ? `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${newCrontabContent.trim()}`
+    : `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->`;
+  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
   await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
 }
 
@@ -111,6 +110,7 @@ module.exports = {
   appendToHistory,
   writeHeartbeat,
   updateInstructions,
+  updateCrontab,
   needsSummarization,
   getFileSize,
   MAX_SIZE,

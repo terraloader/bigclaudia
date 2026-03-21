@@ -1,6 +1,6 @@
 require('dotenv').config({ override: true });
 
-const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateInstructions, needsSummarization, getFileSize, MAX_SIZE } = require('./memory');
+const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateInstructions, updateCrontab, needsSummarization, getFileSize, MAX_SIZE } = require('./memory');
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
 const discord = require('./discord');
 const { createServer, recordHeartbeatRun, setMessageProcessor } = require('./webserver');
@@ -16,12 +16,12 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
     if (extraOnDelta) extraOnDelta(delta);
   };
 
-  const { reply, update_instructions } = await chatWithClaude(
+  const { reply, update_instructions, update_crontab } = await chatWithClaude(
     text, state.getHistory(), instructions, onDelta
   );
 
   state.streamEnd(streamId, reply, via);
-  return { reply, update_instructions };
+  return { reply, update_instructions, update_crontab };
 }
 
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MINS || '30', 10) * 60 * 1000;
@@ -74,11 +74,15 @@ async function processMessage(text, via, extraOnDelta = null) {
     return { reply: t.chat.sessionReset };
   }
 
-  const { reply, update_instructions } = await processWithStreaming(text, via, extraOnDelta);
+  const { reply, update_instructions, update_crontab } = await processWithStreaming(text, via, extraOnDelta);
 
   if (update_instructions && update_instructions.trim()) {
     await updateInstructions(update_instructions.trim());
     console.log(t.heartbeat.instructionsUpdated(via));
+  }
+  if (update_crontab !== null && update_crontab !== undefined) {
+    await updateCrontab(update_crontab);
+    console.log(t.heartbeat.instructionsUpdated(via + '/crontab'));
   }
 
   state.pushHistory('user', text);
@@ -162,9 +166,9 @@ async function runHeartbeat() {
 
     if (await needsSummarization()) {
       console.log(t.heartbeat.compressing);
-      const { instructions: cur, history: curHistory } = await readHeartbeat();
+      const { instructions: cur, crontabRaw: curCrontab, history: curHistory } = await readHeartbeat();
       const compressed = await summarizeHistory(cur, curHistory);
-      await writeHeartbeat(cur, `${t.heartbeat.compressedLabel(new Date().toISOString())}\n\n${compressed}`);
+      await writeHeartbeat(cur, `${t.heartbeat.compressedLabel(new Date().toISOString())}\n\n${compressed}`, curCrontab);
       console.log(t.heartbeat.newSize(await getFileSize()));
     }
   } catch (err) {
