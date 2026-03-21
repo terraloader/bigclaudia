@@ -78,7 +78,11 @@ ${instructions || '(keine Anweisungen gesetzt)'}
 
 Dieser Block wird dem Nutzer nicht angezeigt.
 - Bestätige Heartbeat-Änderungen im normalen Antwortext.
-- Antworte auf Deutsch, außer der Nutzer schreibt in einer anderen Sprache.`,
+- Antworte auf Deutsch, außer der Nutzer schreibt in einer anderen Sprache.
+
+## Crontab / Zeitplanung
+- Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er immer den ## Crontab-Abschnitt in der heartbeat.md – behandle es als Heartbeat-Änderung und aktualisiere ihn entsprechend mit dem <update_instructions>-Block.
+- Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).`,
   },
   web: {
     serverRunning: (host, port) => `[Web] BigClaudia läuft auf http://${host}:${port}`,
