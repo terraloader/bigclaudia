@@ -18,10 +18,10 @@ function killCurrentProcess() {
 const HEARTBEAT_SCHEMA = JSON.stringify({
   type: 'object',
   properties: {
-    discord_messages: { type: 'array', items: { type: 'string' } },
+    messages: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
   },
-  required: ['discord_messages', 'summary'],
+  required: ['messages', 'summary'],
 });
 
 // ─── Heartbeat (structured, no streaming) ────────────────────────────────────
@@ -51,7 +51,7 @@ async function askClaude(systemPrompt, userMessage) {
   if (!result) throw new Error(t.claude.noStructuredResult(raw));
 
   return {
-    discord_messages: result.discord_messages ?? [],
+    discord_messages: result.messages ?? [],
     summary: result.summary ?? String(result),
   };
 }

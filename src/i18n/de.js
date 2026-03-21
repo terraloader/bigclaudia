@@ -17,28 +17,33 @@ module.exports = {
     error: '[Heartbeat] Fehler:',
     instructionsUpdated: (via) => `[Heartbeat] Anweisungen aktualisiert via ${via}.`,
     compressedLabel: (date) => `**[Komprimiert am ${date}]**`,
-    systemPrompt: `Du bist ein autonomer Agent, der regelmäßig ausgeführt wird. Du hast Zugriff auf einen Discord-Kanal.
+    systemPrompt: (graceMins) => `Du bist ein autonomer Agent, der regelmäßig ausgeführt wird. Du kannst Nachrichten an den Nutzer senden.
 
 Deine Aufgaben stehen in den Anweisungen. Führe sie aus und gib strukturiert zurück:
-- "discord_messages": Array mit Nachrichten an Discord (leer = keine)
+- "messages": Array mit Nachrichten an den Nutzer (leer = keine)
 - "summary": kurze Zusammenfassung was du getan hast
 
 Regeln:
 - Schreibe auf Deutsch, außer wenn anders angewiesen
-- Discord-Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
+- Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
 
-Crontab:
-Wenn die Anweisungen einen ## Crontab-Abschnitt enthalten, verarbeite ihn wie folgt:
-- Jeder Eintrag hat das Format: every [day|weekday] at HH:MM [am|pm]: Aufgabenbeschreibung
-- Berechne für jeden Eintrag den letzten vergangenen geplanten Zeitpunkt relativ zum aktuellen Zeitstempel
-- Suche im ## History-Abschnitt nach einer Ausführung dieser Aufgabe nach dem letzten geplanten Zeitpunkt
-- Wenn kein solcher Eintrag existiert, ist die Aufgabe fällig – führe sie jetzt aus
-- Füge ausgeführte Crontab-Aufgaben in deine Zusammenfassung ein`,
+## Crontab-Ausführungsregeln
+Wenn ein ## Crontab-Abschnitt vorhanden ist, verarbeite jeden Eintrag wie folgt:
+- Eintragsformat: every [day|weekday] at HH:MM [am|pm]: Aufgabenbeschreibung
+- Der aktuelle Zeitstempel steht am Ende der Nutzernachricht.
+- Für jeden Eintrag:
+  1. Berechne den letzten vergangenen geplanten Zeitpunkt relativ zum aktuellen Zeitstempel.
+  2. Prüfe ob (aktuelle Zeit − geplante Zeit) ≤ ${graceMins} Minuten. Falls das Toleranzfenster überschritten ist, überspringe diesen Eintrag.
+  3. Suche im ## History-Abschnitt nach einer Zeile mit [CRON], die genau diesen Eintrag referenziert UND ein executed_at nach dem berechneten geplanten Zeitpunkt hat. Wenn gefunden, wurde die Aufgabe bereits ausgeführt – überspringe sie.
+  4. Wenn nicht gefunden und im Toleranzfenster: führe die Aufgabe jetzt aus.
+  5. Für jede ausgeführte Crontab-Aufgabe füge genau diese Zeile in deine Zusammenfassung ein (eine pro Aufgabe):
+     [CRON] schedule="<vollständiger Eintragstext>" scheduled_at="<ISO-Zeitstempel>" executed_at="<aktueller ISO-Zeitstempel>" task="<Aufgabenbeschreibung>"`,
 
-    userMessage: (instructions, history) =>
-      `## Anweisungen\n${instructions}\n\n## Bisherige Historie\n${history || '(keine)'}
+    userMessage: (instructions, crontabRaw, history) =>
+      `## Anweisungen\n${instructions}${crontabRaw ? '\n\n' + crontabRaw : ''}\n\n## Bisherige Historie\n${history || '(keine)'}
 
 ---
+Aktueller Zeitstempel: ${new Date().toString()}
 Führe die Anweisungen aus und gib das JSON-Ergebnis zurück.`,
   },
   discord: {
@@ -92,6 +97,18 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
 - Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er geplante Aufgaben für den Heartbeat-Agenten – verwende den <update_crontab>-Block.
 - Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).`,
   },
+  whatsapp: {
+    qrReady: '[WhatsApp] QR-Code bereit – mit WhatsApp-Handy scannen.',
+    loggedIn: '[WhatsApp] Eingeloggt.',
+    authFailed: '[WhatsApp] Authentifizierung fehlgeschlagen:',
+    disconnected: '[WhatsApp] Verbindung getrennt:',
+    phoneMissing: 'WHATSAPP_PHONE nicht gesetzt',
+    notReady: '[WhatsApp] Client nicht bereit.',
+    unknownPhone: (phone) => `[WhatsApp] Nachricht von unbekannter Nummer ${phone} ignoriert.`,
+    error: '[WhatsApp] Fehler:',
+    sendError: '[WhatsApp] Sendefehler:',
+    mirrorFailed: '[WhatsApp] Spiegeln fehlgeschlagen:',
+  },
   settings: {
     groups: {
       general:   'Allgemein',
@@ -99,6 +116,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
       discord:   'Discord',
       heartbeat: 'Heartbeat',
       webServer: 'Webserver',
+      whatsapp:  'WhatsApp',
     },
     fields: {
       LANGUAGE:                { label: 'Sprache',                  description: 'Sprache für UI und Logs.' },
@@ -107,10 +125,14 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
       DISCORD_ENABLED:         { label: 'Discord aktivieren',       description: 'Discord-Bot-Integration vollständig aktivieren oder deaktivieren.' },
       DISCORD_BOT_TOKEN:       { label: 'Bot-Token',                description: 'Discord-Bot-Token aus dem Discord Developer Portal.' },
       DISCORD_ALLOWED_USER_ID: { label: 'Erlaubte Nutzer-ID',       description: 'Discord-Nutzer-ID, die mit dem Bot interagieren darf.' },
-      HEARTBEAT_INTERVAL_MINS: { label: 'Intervall (Minuten)',      description: 'Wie oft der Heartbeat läuft, in Minuten. Standard: 30.' },
-      HEARTBEAT_MAX_SIZE:      { label: 'Max. Dateigröße (Bytes)',   description: 'Maximale Größe von heartbeat.md bevor die Historie zusammengefasst wird. Standard: 50000.' },
+      HEARTBEAT_INTERVAL_MINS: { label: 'Intervall (Minuten)',         description: 'Wie oft der Heartbeat läuft, in Minuten. Standard: 30.' },
+      HEARTBEAT_MAX_SIZE:      { label: 'Max. Dateigröße (Bytes)',     description: 'Maximale Größe von heartbeat.md bevor die Historie zusammengefasst wird. Standard: 50000.' },
+      CRONTAB_GRACE_MINS:      { label: 'Cron-Toleranzfenster (Min)', description: 'Wie viele Minuten nach dem geplanten Zeitpunkt ein Cron-Job noch ausgeführt werden darf. Standard: 30.' },
       WEB_PORT:                { label: 'Port',                     description: 'Port für die Web-UI. Standard: 3000.' },
       WEB_HOST:                { label: 'Host',                     description: 'Bind-Adresse. 127.0.0.1 = nur lokal, 0.0.0.0 = alle Schnittstellen.' },
+      WHATSAPP_ENABLED:        { label: 'WhatsApp aktivieren',      description: 'WhatsApp-Integration aktivieren. Beim ersten Start ist ein QR-Scan erforderlich.' },
+      WHATSAPP_PHONE:          { label: 'Erlaubte Nummer',          description: 'Telefonnummer, die mit dem Bot interagieren darf (z.B. +491234567890). Hinweis: Dies ist manchmal nicht die eigene Nummer – bitte Terminal-Logs nach dem ersten Verbinden prüfen.' },
+      WHATSAPP_SEND_PHONE:     { label: 'Sende-Nummer',             description: 'Nummer, an die Heartbeat- und Web-UI-Nachrichten gesendet werden. Wenn nicht gesetzt, wird die erlaubte Nummer verwendet.' },
     },
   },
   web: {
@@ -154,5 +176,11 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     settingsSaved: 'Einstellungen gespeichert.',
     settingsRestarting: 'Neustart läuft…',
     settingsRestartConfirm: 'Server jetzt neu starten, um die neuen Einstellungen anzuwenden?',
+    settingsShutdownBtn: 'Herunterfahren',
+    settingsShutdownConfirm: 'Server herunterfahren? Du musst ihn manuell neu starten.',
+    settingsShuttingDown: 'Fährt herunter…',
+    whatsappQrTitle: 'Mit WhatsApp scannen',
+    whatsappQrHint: 'WhatsApp öffnen → Verknüpfte Geräte → Gerät verknüpfen\nund diesen QR-Code scannen.',
+    whatsappAuthenticated: 'WhatsApp verbunden ✓',
   },
 };

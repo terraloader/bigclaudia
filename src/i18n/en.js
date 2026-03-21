@@ -17,28 +17,33 @@ module.exports = {
     error: '[Heartbeat] Error:',
     instructionsUpdated: (via) => `[Heartbeat] Instructions updated via ${via}.`,
     compressedLabel: (date) => `**[Compressed on ${date}]**`,
-    systemPrompt: `You are an autonomous agent that runs regularly. You have access to a Discord channel.
+    systemPrompt: (graceMins) => `You are an autonomous agent that runs regularly. You can send messages to the user.
 
 Your tasks are in the instructions. Execute them and return structured:
-- "discord_messages": Array with messages to Discord (empty = none)
+- "messages": Array of messages to deliver to the user (empty = none)
 - "summary": brief summary of what you did
 
 Rules:
 - Write in English, unless otherwise instructed
-- Discord messages: friendly, max. 2000 characters per message
+- Messages: friendly, max. 2000 characters per message
 
-Crontab:
-If the instructions contain a ## Crontab section, process it as follows:
-- Each entry has the format: every [day|weekday] at HH:MM [am|pm]: task description
-- For each entry, calculate the most recent past scheduled time relative to the current timestamp
-- Search the ## History section for an execution of that task after the most recent scheduled time
-- If no such history entry exists, the task is due — execute it now as part of this run
-- Include any executed crontab tasks in your summary`,
+## Crontab execution rules
+If a ## Crontab section is present, process each entry as follows:
+- Entry format: every [day|weekday] at HH:MM [am|pm]: task description
+- The current timestamp is provided at the bottom of the user message.
+- For each entry:
+  1. Calculate the most recent past scheduled time relative to the current timestamp.
+  2. Check if (current time − scheduled time) ≤ ${graceMins} minutes. If the grace window has passed, skip this entry.
+  3. Search the ## History section for a line containing [CRON] that matches this exact schedule entry AND has an executed_at timestamp after the calculated scheduled time. If found, the task already ran — skip it.
+  4. If not found and within the grace window: execute the task now.
+  5. For every executed cron task, include this exact line in your summary (one per task):
+     [CRON] schedule="<full entry text>" scheduled_at="<ISO timestamp>" executed_at="<current ISO timestamp>" task="<task description>"`,
 
-    userMessage: (instructions, history) =>
-      `## Instructions\n${instructions}\n\n## Previous History\n${history || '(none)'}
+    userMessage: (instructions, crontabRaw, history) =>
+      `## Instructions\n${instructions}${crontabRaw ? '\n\n' + crontabRaw : ''}\n\n## Previous History\n${history || '(none)'}
 
 ---
+Current timestamp: ${new Date().toString()}
 Execute the instructions and return the JSON result.`,
   },
   discord: {
@@ -92,6 +97,18 @@ These blocks are not shown to the user.
 - If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean scheduled tasks for the heartbeat agent — use the <update_crontab> block.
 - Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).`,
   },
+  whatsapp: {
+    qrReady: '[WhatsApp] QR code ready — scan with WhatsApp mobile.',
+    loggedIn: '[WhatsApp] Logged in.',
+    authFailed: '[WhatsApp] Auth failed:',
+    disconnected: '[WhatsApp] Disconnected:',
+    phoneMissing: 'WHATSAPP_PHONE not set',
+    notReady: '[WhatsApp] Client not ready.',
+    unknownPhone: (phone) => `[WhatsApp] Message from unknown number ${phone} ignored.`,
+    error: '[WhatsApp] Error:',
+    sendError: '[WhatsApp] Send error:',
+    mirrorFailed: '[WhatsApp] Mirroring failed:',
+  },
   settings: {
     groups: {
       general:   'General',
@@ -99,6 +116,7 @@ These blocks are not shown to the user.
       discord:   'Discord',
       heartbeat: 'Heartbeat',
       webServer: 'Web Server',
+      whatsapp:  'WhatsApp',
     },
     fields: {
       LANGUAGE:                { label: 'Language',             description: 'UI and log language.' },
@@ -107,10 +125,14 @@ These blocks are not shown to the user.
       DISCORD_ENABLED:         { label: 'Enable Discord',        description: 'Enable or disable the Discord bot integration entirely.' },
       DISCORD_BOT_TOKEN:       { label: 'Bot Token',            description: 'Discord bot token from the Discord Developer Portal.' },
       DISCORD_ALLOWED_USER_ID: { label: 'Allowed User ID',      description: 'Discord user ID that is allowed to interact with the bot.' },
-      HEARTBEAT_INTERVAL_MINS: { label: 'Interval (minutes)',   description: 'How often the heartbeat runs in minutes. Default: 30.' },
-      HEARTBEAT_MAX_SIZE:      { label: 'Max File Size (bytes)', description: 'Maximum size of heartbeat.md before history is summarized. Default: 50000.' },
+      HEARTBEAT_INTERVAL_MINS: { label: 'Interval (minutes)',      description: 'How often the heartbeat runs in minutes. Default: 30.' },
+      HEARTBEAT_MAX_SIZE:      { label: 'Max File Size (bytes)',   description: 'Maximum size of heartbeat.md before history is summarized. Default: 50000.' },
+      CRONTAB_GRACE_MINS:      { label: 'Cron Grace Window (min)', description: 'How many minutes after the scheduled time a cron task may still be executed. Default: 30.' },
       WEB_PORT:                { label: 'Port',                 description: 'Port for the web UI. Default: 3000.' },
       WEB_HOST:                { label: 'Host',                 description: 'Bind address. 127.0.0.1 = local only, 0.0.0.0 = all interfaces.' },
+      WHATSAPP_ENABLED:        { label: 'Enable WhatsApp',      description: 'Enable the WhatsApp integration. Requires a QR scan on first start.' },
+      WHATSAPP_PHONE:          { label: 'Allowed Phone',        description: 'Phone number allowed to interact with the bot (e.g. +491234567890). Note: this is sometimes not your real number — check terminal logging after first connect.' },
+      WHATSAPP_SEND_PHONE:     { label: 'Send-To Phone',        description: 'Phone number to send heartbeat and web UI messages to. Defaults to Allowed Phone if not set.' },
     },
   },
   web: {
@@ -154,5 +176,11 @@ These blocks are not shown to the user.
     settingsSaved: 'Settings saved.',
     settingsRestarting: 'Restarting…',
     settingsRestartConfirm: 'Restart the server now to apply new settings?',
+    settingsShutdownBtn: 'Shutdown',
+    settingsShutdownConfirm: 'Shut down the server? You will need to restart it manually.',
+    settingsShuttingDown: 'Shutting down…',
+    whatsappQrTitle: 'Scan with WhatsApp',
+    whatsappQrHint: 'Open WhatsApp → Linked Devices → Link a Device\nand scan this QR code.',
+    whatsappAuthenticated: 'WhatsApp connected ✓',
   },
 };
