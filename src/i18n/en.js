@@ -78,7 +78,11 @@ ${instructions || '(no instructions set)'}
 
 This block is not shown to the user.
 - Confirm heartbeat changes in the normal response text.
-- Respond in English, unless the user writes in another language.`,
+- Respond in English, unless the user writes in another language.
+
+## Crontab / Scheduling
+- If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean the ## Crontab section inside heartbeat.md — treat it as a heartbeat instruction change and update it accordingly using the <update_instructions> block.
+- Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).`,
   },
   web: {
     serverRunning: (host, port) => `[Web] BigClaudia running at http://${host}:${port}`,
