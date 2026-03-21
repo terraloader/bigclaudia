@@ -76,6 +76,15 @@ async function send(text) {
 }
 
 /**
+ * Sends text to a channel, splitting at 2000-char limit.
+ */
+async function sendToChannel(channel, text) {
+  for (const chunk of splitMessage(text)) {
+    await channel.send(chunk);
+  }
+}
+
+/**
  * Replies to a Discord message.
  * In DMs: plain message without quote. In guild channels: as a reply (with quote).
  */
@@ -127,4 +136,4 @@ async function destroy() {
   client.destroy();
 }
 
-module.exports = { start, onMessage, send, reply, keepTyping, isConfigured, destroy };
+module.exports = { start, onMessage, send, sendToChannel, reply, keepTyping, isConfigured, destroy };

@@ -44,15 +44,29 @@ async function readHeartbeat() {
 }
 
 /**
+ * Extracts the raw ## Crontab section (including heading) to preserve it during writes.
+ */
+async function getCrontabRaw() {
+  try {
+    const content = await fs.readFile(HEARTBEAT_FILE, 'utf-8');
+    const match = content.match(/\n(## Crontab[\s\S]*?)(?=\n## History|$)/);
+    return match ? '\n\n' + match[1].trimEnd() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Appends a new entry to the history in heartbeat.md.
  */
 async function appendToHistory(summary) {
   const { instructions, history } = await readHeartbeat();
+  const crontabRaw = await getCrontabRaw();
   const timestamp = new Date().toISOString();
   const newEntry = `\n### ${timestamp}\n${summary}\n`;
   const updatedHistory = history + newEntry;
 
-  const newContent = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}\n\n## History\n<!-- Execution history is automatically appended here -->\n${updatedHistory}`;
+  const newContent = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${updatedHistory}`;
   await fs.writeFile(HEARTBEAT_FILE, newContent, 'utf-8');
 }
 
@@ -60,7 +74,8 @@ async function appendToHistory(summary) {
  * Overwrites heartbeat.md completely (after summarization).
  */
 async function writeHeartbeat(instructions, summarizedHistory) {
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}\n\n## History\n<!-- Execution history is automatically appended here -->\n\n${summarizedHistory}\n`;
+  const crontabRaw = await getCrontabRaw();
+  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n\n${summarizedHistory}\n`;
   await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
 }
 
@@ -85,7 +100,8 @@ async function getFileSize() {
  */
 async function updateInstructions(newInstructions) {
   const { history } = await readHeartbeat();
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${newInstructions}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
+  const crontabRaw = await getCrontabRaw();
+  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${newInstructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
   await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
 }
 
