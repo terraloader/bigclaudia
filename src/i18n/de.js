@@ -25,7 +25,15 @@ Deine Aufgaben stehen in den Anweisungen. Führe sie aus und gib strukturiert zu
 
 Regeln:
 - Schreibe auf Deutsch, außer wenn anders angewiesen
-- Discord-Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht`,
+- Discord-Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
+
+Crontab:
+Wenn die Anweisungen einen ## Crontab-Abschnitt enthalten, verarbeite ihn wie folgt:
+- Jeder Eintrag hat das Format: every [day|weekday] at HH:MM [am|pm]: Aufgabenbeschreibung
+- Berechne für jeden Eintrag den letzten vergangenen geplanten Zeitpunkt relativ zum aktuellen Zeitstempel
+- Suche im ## History-Abschnitt nach einer Ausführung dieser Aufgabe nach dem letzten geplanten Zeitpunkt
+- Wenn kein solcher Eintrag existiert, ist die Aufgabe fällig – führe sie jetzt aus
+- Füge ausgeführte Crontab-Aufgaben in deine Zusammenfassung ein`,
 
     userMessage: (instructions, history) =>
       `## Anweisungen\n${instructions}\n\n## Bisherige Historie\n${history || '(keine)'}

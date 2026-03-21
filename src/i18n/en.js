@@ -25,7 +25,15 @@ Your tasks are in the instructions. Execute them and return structured:
 
 Rules:
 - Write in English, unless otherwise instructed
-- Discord messages: friendly, max. 2000 characters per message`,
+- Discord messages: friendly, max. 2000 characters per message
+
+Crontab:
+If the instructions contain a ## Crontab section, process it as follows:
+- Each entry has the format: every [day|weekday] at HH:MM [am|pm]: task description
+- For each entry, calculate the most recent past scheduled time relative to the current timestamp
+- Search the ## History section for an execution of that task after the most recent scheduled time
+- If no such history entry exists, the task is due — execute it now as part of this run
+- Include any executed crontab tasks in your summary`,
 
     userMessage: (instructions, history) =>
       `## Instructions\n${instructions}\n\n## Previous History\n${history || '(none)'}

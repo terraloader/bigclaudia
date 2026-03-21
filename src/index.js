@@ -102,7 +102,7 @@ async function handleDiscordMessage(message) {
 
   await enqueue(msg.id, async () => {
     const stopTyping = discord.keepTyping(message.channel);
-    const chunker = makeDiscordChunker((text) => message.channel.send(text));
+    const chunker = makeDiscordChunker((text) => discord.sendToChannel(message.channel, text));
     try {
       await processMessage(text, 'discord', chunker.onDelta);
     } catch (err) {

@@ -5,5 +5,9 @@
 
 Greet the user warmly once a day. Write a short, friendly message about the weather, the day, or an interesting fact. Keep the messages varied and entertaining.
 
+## Crontab
+<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->
+<!-- Example: every monday at 09:00 am: Post a weekly summary to Discord. -->
+
 ## History
 <!-- Execution history is automatically appended here -->
