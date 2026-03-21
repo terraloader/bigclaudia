@@ -957,4 +957,4 @@ function createServer() {
   return server;
 }
 
-module.exports = { createServer, recordHeartbeatRun, setMessageProcessor };
+module.exports = { createServer, recordHeartbeatRun, setMessageProcessor, restartSelf };

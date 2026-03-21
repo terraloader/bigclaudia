@@ -141,6 +141,7 @@ These blocks are not shown to the user.
   },
   chat: {
     sessionReset: 'Session reset. ✓',
+    restarting: 'Restarting server… ⟳',
     error: (msg) => `Error: ${msg}`,
   },
   ui: {
@@ -160,7 +161,7 @@ These blocks are not shown to the user.
     messagePlaceholder: 'Write a message\u2026 (Enter to send, Shift+Enter = new line)',
     sendButton: 'Send',
     stopButton: 'Stop',
-    chatHint: '/new \u2192 Reset session &nbsp;\u00b7&nbsp; Shift+Enter \u2192 new line',
+    chatHint: '/new \u2192 Reset session &nbsp;\u00b7&nbsp; /restart \u2192 Restart server &nbsp;\u00b7&nbsp; Shift+Enter \u2192 new line',
     sessionReset: 'Session reset.',
     notRunYet: 'not run yet',
     noInstructionsSet: 'No instructions set.',
