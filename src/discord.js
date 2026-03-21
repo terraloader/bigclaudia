@@ -124,8 +124,13 @@ function splitMessage(text, maxLength = 1990) {
   return chunks;
 }
 
+function isEnabled() {
+  const v = (process.env.DISCORD_ENABLED ?? 'false').toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 function isConfigured() {
-  return !!(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_ALLOWED_USER_ID);
+  return isEnabled() && !!(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_ALLOWED_USER_ID);
 }
 
 async function destroy() {

@@ -13,6 +13,7 @@ const SETTINGS_DEFS = [
   { group: 'general',    key: 'LANGUAGE',                type: 'select', options: ['en', 'de'], placeholder: 'en' },
   { group: 'claude',     key: 'CLAUDE_MODEL',            type: 'text',     placeholder: 'opus' },
   { group: 'claude',     key: 'CLAUDE_BIN',              type: 'text',     placeholder: 'claude' },
+  { group: 'discord',    key: 'DISCORD_ENABLED',         type: 'select', options: ['true', 'false'], placeholder: 'false' },
   { group: 'discord',    key: 'DISCORD_BOT_TOKEN',       type: 'password', placeholder: '' },
   { group: 'discord',    key: 'DISCORD_ALLOWED_USER_ID', type: 'text',     placeholder: '' },
   { group: 'heartbeat',  key: 'HEARTBEAT_INTERVAL_MINS', type: 'number',   placeholder: '30' },

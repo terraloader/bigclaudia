@@ -246,9 +246,11 @@ async function main() {
   // Start web server
   createServer();
 
-  // Start Discord bot
-  discord.onMessage(handleDiscordMessage);
-  await discord.start();
+  // Start Discord bot (only if enabled)
+  if (discord.isConfigured()) {
+    discord.onMessage(handleDiscordMessage);
+    await discord.start();
+  }
 
   // Run first heartbeat immediately, then on interval
   runHeartbeat();
