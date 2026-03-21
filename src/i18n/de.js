@@ -84,6 +84,26 @@ Dieser Block wird dem Nutzer nicht angezeigt.
 - Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er immer den ## Crontab-Abschnitt in der heartbeat.md – behandle es als Heartbeat-Änderung und aktualisiere ihn entsprechend mit dem <update_instructions>-Block.
 - Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).`,
   },
+  settings: {
+    groups: {
+      general:   'Allgemein',
+      claude:    'Claude',
+      discord:   'Discord',
+      heartbeat: 'Heartbeat',
+      webServer: 'Webserver',
+    },
+    fields: {
+      LANGUAGE:                { label: 'Sprache',                  description: 'Sprache für UI und Logs.' },
+      CLAUDE_MODEL:            { label: 'Modell',                   description: 'Modell-Alias: opus, sonnet, haiku – oder eine vollständige Modell-ID.' },
+      CLAUDE_BIN:              { label: 'CLI-Pfad',                 description: 'Pfad zur Claude-CLI-Binary. Leer lassen, um "claude" aus dem PATH zu verwenden.' },
+      DISCORD_BOT_TOKEN:       { label: 'Bot-Token',                description: 'Discord-Bot-Token aus dem Discord Developer Portal.' },
+      DISCORD_ALLOWED_USER_ID: { label: 'Erlaubte Nutzer-ID',       description: 'Discord-Nutzer-ID, die mit dem Bot interagieren darf.' },
+      HEARTBEAT_INTERVAL_MINS: { label: 'Intervall (Minuten)',      description: 'Wie oft der Heartbeat läuft, in Minuten. Standard: 30.' },
+      HEARTBEAT_MAX_SIZE:      { label: 'Max. Dateigröße (Bytes)',   description: 'Maximale Größe von heartbeat.md bevor die Historie zusammengefasst wird. Standard: 50000.' },
+      WEB_PORT:                { label: 'Port',                     description: 'Port für die Web-UI. Standard: 3000.' },
+      WEB_HOST:                { label: 'Host',                     description: 'Bind-Adresse. 127.0.0.1 = nur lokal, 0.0.0.0 = alle Schnittstellen.' },
+    },
+  },
   web: {
     serverRunning: (host, port) => `[Web] BigClaudia läuft auf http://${host}:${port}`,
     processingError: '[Web] Verarbeitungsfehler:',
@@ -115,7 +135,15 @@ Dieser Block wird dem Nutzer nicht angezeigt.
     noInstructionsSet: 'Keine Anweisungen gesetzt.',
     sendError: 'Sendefehler:',
     maxLabel: 'Max:',
-    tabDashboard: 'Dashboard',
+    tabInsights: 'Einblicke',
+    tabCrontab: 'Crontab',
+    noCrontabEntries: 'Keine geplanten Aufgaben.',
     tabChat: 'Chat',
+    tabSettings: 'Einstellungen',
+    settingsSaveBtn: 'Speichern',
+    settingsRestartBtn: 'Neustart',
+    settingsSaved: 'Einstellungen gespeichert.',
+    settingsRestarting: 'Neustart läuft…',
+    settingsRestartConfirm: 'Server jetzt neu starten, um die neuen Einstellungen anzuwenden?',
   },
 };

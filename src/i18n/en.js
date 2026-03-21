@@ -84,6 +84,26 @@ This block is not shown to the user.
 - If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean the ## Crontab section inside heartbeat.md — treat it as a heartbeat instruction change and update it accordingly using the <update_instructions> block.
 - Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).`,
   },
+  settings: {
+    groups: {
+      general:   'General',
+      claude:    'Claude',
+      discord:   'Discord',
+      heartbeat: 'Heartbeat',
+      webServer: 'Web Server',
+    },
+    fields: {
+      LANGUAGE:                { label: 'Language',             description: 'UI and log language.' },
+      CLAUDE_MODEL:            { label: 'Model',                description: 'Model alias: opus, sonnet, haiku — or a full model ID.' },
+      CLAUDE_BIN:              { label: 'CLI Binary Path',      description: 'Path to the Claude CLI binary. Leave empty to use "claude" from PATH.' },
+      DISCORD_BOT_TOKEN:       { label: 'Bot Token',            description: 'Discord bot token from the Discord Developer Portal.' },
+      DISCORD_ALLOWED_USER_ID: { label: 'Allowed User ID',      description: 'Discord user ID that is allowed to interact with the bot.' },
+      HEARTBEAT_INTERVAL_MINS: { label: 'Interval (minutes)',   description: 'How often the heartbeat runs in minutes. Default: 30.' },
+      HEARTBEAT_MAX_SIZE:      { label: 'Max File Size (bytes)', description: 'Maximum size of heartbeat.md before history is summarized. Default: 50000.' },
+      WEB_PORT:                { label: 'Port',                 description: 'Port for the web UI. Default: 3000.' },
+      WEB_HOST:                { label: 'Host',                 description: 'Bind address. 127.0.0.1 = local only, 0.0.0.0 = all interfaces.' },
+    },
+  },
   web: {
     serverRunning: (host, port) => `[Web] BigClaudia running at http://${host}:${port}`,
     processingError: '[Web] Processing error:',
@@ -115,7 +135,15 @@ This block is not shown to the user.
     noInstructionsSet: 'No instructions set.',
     sendError: 'Send error:',
     maxLabel: 'Max:',
-    tabDashboard: 'Dashboard',
+    tabInsights: 'Insights',
+    tabCrontab: 'Crontab',
+    noCrontabEntries: 'No scheduled tasks.',
     tabChat: 'Chat',
+    tabSettings: 'Settings',
+    settingsSaveBtn: 'Save',
+    settingsRestartBtn: 'Restart',
+    settingsSaved: 'Settings saved.',
+    settingsRestarting: 'Restarting…',
+    settingsRestartConfirm: 'Restart the server now to apply new settings?',
   },
 };

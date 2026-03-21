@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateInstructions, needsSummarization, getFileSize, MAX_SIZE } = require('./memory');
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
@@ -24,7 +24,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   return { reply, update_instructions };
 }
 
-const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || String(30 * 60 * 1000), 10);
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MINS || '30', 10) * 60 * 1000;
 
 // ─── Message queue ────────────────────────────────────────────────────────────
 

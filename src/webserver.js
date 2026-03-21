@@ -1,8 +1,64 @@
 const http = require('http');
+const fs = require('fs').promises;
+const path = require('path');
+const { spawn } = require('child_process');
 const { readHeartbeat, getFileSize, MAX_SIZE } = require('./memory');
 const { killCurrentProcess } = require('./claude');
 const state = require('./state');
 const t = require('./i18n');
+
+const ENV_FILE = path.join(__dirname, '..', '.env');
+
+const SETTINGS_DEFS = [
+  { group: 'general',    key: 'LANGUAGE',                type: 'select', options: ['en', 'de'], placeholder: 'en' },
+  { group: 'claude',     key: 'CLAUDE_MODEL',            type: 'text',     placeholder: 'opus' },
+  { group: 'claude',     key: 'CLAUDE_BIN',              type: 'text',     placeholder: 'claude' },
+  { group: 'discord',    key: 'DISCORD_BOT_TOKEN',       type: 'password', placeholder: '' },
+  { group: 'discord',    key: 'DISCORD_ALLOWED_USER_ID', type: 'text',     placeholder: '' },
+  { group: 'heartbeat',  key: 'HEARTBEAT_INTERVAL_MINS', type: 'number',   placeholder: '30' },
+  { group: 'heartbeat',  key: 'HEARTBEAT_MAX_SIZE',      type: 'number',   placeholder: '50000' },
+  { group: 'webServer',  key: 'WEB_PORT',                type: 'number',   placeholder: '3000' },
+  { group: 'webServer',  key: 'WEB_HOST',                type: 'text',     placeholder: '127.0.0.1' },
+];
+
+async function readEnvFile() {
+  try {
+    const values = {};
+    for (const line of (await fs.readFile(ENV_FILE, 'utf-8')).split('\n')) {
+      const raw = line.trim();
+      if (!raw || raw.startsWith('#')) continue;
+      const eq = raw.indexOf('=');
+      if (eq < 0) continue;
+      values[raw.slice(0, eq).trim()] = raw.slice(eq + 1).trim();
+    }
+    return values;
+  } catch { return {}; }
+}
+
+async function writeEnvFile(updates) {
+  let content = '';
+  try { content = await fs.readFile(ENV_FILE, 'utf-8'); } catch {}
+  const touched = new Set();
+  const newLines = (content ? content.split('\n') : []).map(line => {
+    const raw = line.trim();
+    if (!raw || raw.startsWith('#')) return line;
+    const eq = raw.indexOf('=');
+    if (eq < 0) return line;
+    const key = raw.slice(0, eq).trim();
+    if (key in updates) { touched.add(key); return `${key}=${updates[key]}`; }
+    return line;
+  });
+  for (const [key, val] of Object.entries(updates)) {
+    if (!touched.has(key)) newLines.push(`${key}=${val}`);
+  }
+  await fs.writeFile(ENV_FILE, newLines.join('\n'), 'utf-8');
+}
+
+function restartSelf() {
+  const args = process.argv.slice(1).join(' ');
+  spawn('sh', ['-c', `sleep 1 && node ${args}`], { detached: true, stdio: 'ignore' }).unref();
+  process.exit(0);
+}
 
 const PORT = parseInt(process.env.WEB_PORT || '3000', 10);
 const HOST = process.env.WEB_HOST || '127.0.0.1';
@@ -18,7 +74,7 @@ function setMessageProcessor(fn) { _messageProcessor = fn; }
 // ─── API data ─────────────────────────────────────────────────────────────────
 
 async function getHeartbeatApiData() {
-  const { instructions, history } = await readHeartbeat();
+  const { instructions, history, raw } = await readHeartbeat();
   const fileSize = await getFileSize();
   const entries = [];
   const entryRegex = /### ([^\n]+)\n([\s\S]*?)(?=\n### |$)/g;
@@ -27,9 +83,23 @@ async function getHeartbeatApiData() {
     entries.push({ timestamp: match[1].trim(), content: match[2].trim() });
   }
   entries.reverse();
+
+  // Parse ## Crontab section
+  const crontabMatch = raw.match(/## Crontab\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)(?=\n## |$)/);
+  const crontabText = crontabMatch ? crontabMatch[1].trim() : '';
+  const crontabEntries = crontabText
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('<!--'))
+    .map(l => {
+      const m = l.match(/^every\s+([\w]+)\s+at\s+(\d{1,2}:\d{2}(?:\s*[ap]m)?)\s*:\s*(.+)$/i);
+      return m ? { schedule: `every ${m[1]} at ${m[2]}`, task: m[3].trim(), raw: l } : { schedule: null, task: l, raw: l };
+    });
+
   return {
     instructions,
     entries,
+    crontabEntries,
     stats: { fileSize, maxSize: MAX_SIZE, entryCount: entries.length, lastRun: lastHeartbeatRun, botStartTime },
   };
 }
@@ -58,6 +128,10 @@ function getHTML(ui) {
     sendError: ui.sendError,
     maxLabel: ui.maxLabel,
     locale: ui.locale,
+    settingsSaved: ui.settingsSaved,
+    settingsRestarting: ui.settingsRestarting,
+    settingsRestartConfirm: ui.settingsRestartConfirm,
+    noCrontabEntries: ui.noCrontabEntries,
   });
 
   return `<!DOCTYPE html>
@@ -73,12 +147,24 @@ function getHTML(ui) {
     --accent: #00e5a0; --accent2: #0ea5e9; --text: #e2e8f0; --muted: #64748b;
     --danger: #f43f5e; --radius: 10px; --discord: #5865f2;
   }
+  [data-theme="light"] {
+    --bg: #f0f4f8; --bg2: #e2e8f0; --bg3: #ffffff; --border: #cbd5e1;
+    --accent: #00a371; --accent2: #0284c7; --text: #0f172a; --muted: #64748b;
+    --danger: #e11d48; --discord: #4752c4;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f0f4f8; --bg2: #e2e8f0; --bg3: #ffffff; --border: #cbd5e1;
+      --accent: #00a371; --accent2: #0284c7; --text: #0f172a; --muted: #64748b;
+      --danger: #e11d48; --discord: #4752c4;
+    }
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; line-height: 1.6; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
   /* ── Header ── */
   header {
-    background: linear-gradient(135deg, #0a0e1a 0%, #0f1f3d 100%);
+    background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
     border-bottom: 1px solid var(--border);
     padding: 14px 24px;
     display: flex; align-items: center; gap: 14px;
@@ -91,6 +177,10 @@ function getHTML(ui) {
   header h1 { font-size: 1.3rem; font-weight: 700; }
   header h1 span { color: var(--accent); }
   .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: .8rem; color: var(--muted); }
+  .theme-toggle { display: flex; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .theme-btn { background: none; border: none; cursor: pointer; padding: 5px 8px; color: var(--muted); font-size: .75rem; display: flex; align-items: center; transition: all .15s; }
+  .theme-btn:hover { color: var(--text); }
+  .theme-btn.active { background: var(--accent); color: var(--bg); }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse 2s ease-in-out infinite; display: inline-block; margin-right: 5px; }
 
   /* ── Tabs ── */
@@ -120,9 +210,14 @@ function getHTML(ui) {
   .storage-fill.warn { background: linear-gradient(90deg, #f59e0b, var(--danger)); }
   .storage-label { font-size: .68rem; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
   .meta-row { display: flex; flex-direction: column; gap: 8px; font-size: .78rem; }
+  .cron-list { display: flex; flex-direction: column; gap: 8px; }
+  .cron-item { display: flex; flex-direction: column; gap: 3px; background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--accent2); border-radius: 6px; padding: 9px 12px; }
+  .cron-schedule { font-size: .7rem; font-family: monospace; color: var(--accent2); }
+  .cron-task { font-size: .82rem; color: var(--text); }
+  .cron-empty { font-size: .82rem; color: var(--muted); }
   .meta-row .label { color: var(--muted); margin-bottom: 1px; }
   .meta-row .val { font-family: monospace; color: var(--accent2); }
-  .instructions-body { font-size: .82rem; color: #94a3b8; line-height: 1.7; }
+  .instructions-body { font-size: .82rem; color: var(--muted); line-height: 1.7; }
   .instructions-body p { margin-bottom: 6px; }
   .timeline-header { font-size: .95rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
   .entry-count { background: var(--accent); color: var(--bg); font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
@@ -158,8 +253,8 @@ function getHTML(ui) {
   .msg.bot  .msg-bubble { background: var(--bg3); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
   .msg-bubble p { margin-bottom: 6px; }
   .msg-bubble p:last-child { margin-bottom: 0; }
-  .msg-bubble code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 3px; font-size: .8em; }
-  .msg-bubble pre { background: rgba(0,0,0,.35); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+  .msg-bubble code { background: rgba(0,0,0,.12); padding: 1px 5px; border-radius: 3px; font-size: .8em; }
+  .msg-bubble pre { background: rgba(0,0,0,.12); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
   .msg-bubble pre code { background: none; padding: 0; }
   .msg-bubble ul, .msg-bubble ol { padding-left: 18px; margin: 4px 0; }
   .msg-bubble strong { color: var(--accent); }
@@ -188,6 +283,28 @@ function getHTML(ui) {
   .stop-btn svg { width: 16px; height: 16px; }
   .chat-hint { font-size: .7rem; color: var(--muted); margin-top: 6px; }
 
+  /* Settings */
+  #view-settings { flex-direction: column; }
+  .settings-wrap { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+  .settings-body { flex: 1; overflow-y: auto; padding: 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; align-content: start; }
+  .settings-footer { border-top: 1px solid var(--border); padding: 12px 24px; background: var(--bg2); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .settings-status { flex: 1; font-size: .82rem; color: var(--accent); }
+  .settings-group { display: flex; flex-direction: column; gap: 16px; }
+  .settings-group-title { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 2px; }
+  .setting-item { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 15px; }
+  .setting-label { font-size: .85rem; font-weight: 600; margin-bottom: 3px; }
+  .setting-desc { font-size: .73rem; color: var(--muted); margin-bottom: 9px; line-height: 1.5; }
+  .setting-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: .85rem; font-family: monospace; outline: none; transition: border-color .15s; box-sizing: border-box; }
+  .setting-input:focus { border-color: var(--accent); }
+  .btn-save { background: var(--accent); color: var(--bg); border: none; border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .btn-save:hover { opacity: .85; }
+  .btn-restart { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 7px; }
+  .btn-restart:hover { border-color: #f59e0b; color: #f59e0b; }
+  .btn-restart.restarting { border-color: #f59e0b; color: #f59e0b; pointer-events: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-restart .spin-icon { width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+  .btn-restart.restarting .spin-icon { display: block; }
+
   /* Loading overlay */
   #loading { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: .9rem; color: var(--muted); z-index: 100; transition: opacity .3s; }
   .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-right: 10px; }
@@ -204,17 +321,23 @@ function getHTML(ui) {
   </svg>
   <h1><span>BigClaudia</span></h1>
   <div class="header-right">
+    <div class="theme-toggle">
+      <button class="theme-btn" data-mode="light" title="Light">☀️</button>
+      <button class="theme-btn" data-mode="auto" title="Auto">⚙️</button>
+      <button class="theme-btn" data-mode="dark" title="Dark">🌙</button>
+    </div>
     <span><span class="status-dot"></span>online</span>
   </div>
 </header>
 
 <div class="tabs">
-  <div class="tab active" data-tab="dashboard">${ui.tabDashboard}</div>
-  <div class="tab" data-tab="chat">${ui.tabChat} <span class="tab-badge" id="unread-badge" style="display:none">0</span></div>
+  <div class="tab active" data-tab="chat">${ui.tabChat} <span class="tab-badge" id="unread-badge" style="display:none">0</span></div>
+  <div class="tab" data-tab="dashboard">${ui.tabInsights}</div>
+  <div class="tab" data-tab="settings">${ui.tabSettings}</div>
 </div>
 
 <!-- ── Dashboard ── -->
-<div id="view-dashboard" class="view active">
+<div id="view-dashboard" class="view">
   <aside>
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>${ui.overview}</div>
@@ -232,9 +355,13 @@ function getHTML(ui) {
         <div><div class="label">${ui.lastHeartbeat}</div><div class="val" id="last-run">–</div></div>
       </div>
     </div>
-    <div class="card" style="flex:1">
+    <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>${ui.instructions}</div>
       <div class="instructions-body" id="instructions">–</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/><path d="M16 2l2 2M8 2L6 4"/></svg>${ui.tabCrontab}</div>
+      <div class="cron-list" id="cron-list"><span class="cron-empty">${ui.noCrontabEntries}</span></div>
     </div>
   </aside>
   <main>
@@ -246,7 +373,7 @@ function getHTML(ui) {
 </div>
 
 <!-- ── Chat ── -->
-<div id="view-chat" class="view">
+<div id="view-chat" class="view active">
   <div class="chat-messages" id="chat-messages">
     <div class="chat-empty" id="chat-empty">${ui.noMessages}</div>
   </div>
@@ -261,6 +388,18 @@ function getHTML(ui) {
       </button>
     </div>
     <div class="chat-hint">${ui.chatHint}</div>
+  </div>
+</div>
+
+<!-- ── Settings ── -->
+<div id="view-settings" class="view">
+  <div class="settings-wrap">
+    <div class="settings-body" id="settings-body"></div>
+    <div class="settings-footer">
+      <div class="settings-status" id="settings-status"></div>
+      <button class="btn-restart" id="settings-restart-btn"><span class="spin-icon"></span>${ui.settingsRestartBtn}</button>
+      <button class="btn-save" id="settings-save-btn">${ui.settingsSaveBtn}</button>
+    </div>
   </div>
 </div>
 
@@ -287,6 +426,7 @@ function switchTab(name) {
     scrollChat();
   }
   if (name === 'dashboard') loadDashboard();
+  if (name === 'settings') loadSettings();
 }
 
 document.querySelectorAll('.tab').forEach(tab => {
@@ -334,6 +474,16 @@ async function loadDashboard() {
     document.getElementById('instructions').innerHTML = data.instructions
       ? marked.parse(data.instructions)
       : \`<span style="color:var(--muted)">\${STRINGS.noInstructionsSet}</span>\`;
+    const cronList = document.getElementById('cron-list');
+    if (!data.crontabEntries || !data.crontabEntries.length) {
+      cronList.innerHTML = \`<span class="cron-empty">\${STRINGS.noCrontabEntries}</span>\`;
+    } else {
+      cronList.innerHTML = data.crontabEntries.map(e => \`
+        <div class="cron-item">
+          \${e.schedule ? \`<div class="cron-schedule">\${e.schedule}</div>\` : ''}
+          <div class="cron-task">\${e.task}</div>
+        </div>\`).join('');
+    }
     document.getElementById('entry-count').textContent = data.entries.length;
     const timeline = document.getElementById('timeline');
     if (!data.entries.length) {
@@ -535,6 +685,72 @@ input.addEventListener('input', () => {
 document.getElementById('send-btn').addEventListener('click', sendMessage);
 document.getElementById('stop-btn').addEventListener('click', stopChat);
 
+// ── Settings ─────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const { defs, values } = await fetch('/api/settings').then(r => r.json());
+  const groups = {};
+  for (const d of defs) { if (!groups[d.group]) groups[d.group] = []; groups[d.group].push(d); }
+
+  document.getElementById('settings-body').innerHTML = Object.entries(groups).map(([group, items]) => \`
+    <div class="settings-group">
+      <div class="settings-group-title">\${group}</div>
+      \${items.map(d => {
+        const val = (values[d.key] ?? '').replace(/"/g, '&quot;');
+        const input = d.type === 'select'
+          ? \`<select class="setting-input" name="\${d.key}">\${d.options.map(o => \`<option value="\${o}"\${(values[d.key] || d.placeholder) === o ? ' selected' : ''}>\${o}</option>\`).join('')}</select>\`
+          : \`<input class="setting-input" type="\${d.type === 'password' ? 'password' : d.type === 'number' ? 'number' : 'text'}" name="\${d.key}" value="\${val}" placeholder="\${d.placeholder}">\`;
+        return \`<div class="setting-item"><div class="setting-label">\${d.label}</div><div class="setting-desc">\${d.description}</div>\${input}</div>\`;
+      }).join('')}
+    </div>\`).join('');
+}
+
+async function saveSettings() {
+  const updates = {};
+  document.querySelectorAll('#settings-body .setting-input').forEach(el => { if (el.name) updates[el.name] = el.value; });
+  await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+  const st = document.getElementById('settings-status');
+  st.textContent = STRINGS.settingsSaved;
+  setTimeout(() => { st.textContent = ''; }, 3000);
+}
+
+async function restartServer() {
+  if (!confirm(STRINGS.settingsRestartConfirm)) return;
+  const btn = document.getElementById('settings-restart-btn');
+  const status = document.getElementById('settings-status');
+  btn.classList.add('restarting');
+  status.textContent = STRINGS.settingsRestarting;
+  await fetch('/api/restart', { method: 'POST' }).catch(() => {});
+  // Poll until server is back, then reload
+  const poll = async () => {
+    try { await fetch('/api/heartbeat'); location.reload(); }
+    catch { setTimeout(poll, 800); }
+  };
+  setTimeout(poll, 1500);
+}
+
+document.getElementById('settings-save-btn').addEventListener('click', saveSettings);
+document.getElementById('settings-restart-btn').addEventListener('click', restartServer);
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === 'dark')  root.setAttribute('data-theme', 'dark');
+  else if (mode === 'light') root.setAttribute('data-theme', 'light');
+  else root.removeAttribute('data-theme');
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+}
+(function () {
+  const saved = localStorage.getItem('theme') || 'auto';
+  applyTheme(saved);
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      localStorage.setItem('theme', mode);
+      applyTheme(mode);
+    });
+  });
+})();
+
 // ── Init ────────────────────────────────────────────────────────────────────
 connectSSE();
 </script>
@@ -582,6 +798,35 @@ function createServer() {
         console.error(t.web.processingError, err.message);
         state.addChatMessage('bot', t.chat.error(err.message), 'web');
       });
+      return;
+    }
+
+    // Settings
+    if (req.method === 'GET' && url === '/api/settings') {
+      const values = await readEnvFile();
+      const defs = SETTINGS_DEFS.map(d => ({
+        ...d,
+        group: t.settings.groups[d.group] || d.group,
+        label: (t.settings.fields[d.key] || {}).label || d.key,
+        description: (t.settings.fields[d.key] || {}).description || '',
+      }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ defs, values }));
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/settings') {
+      const body = await readBody(req).catch(() => ({}));
+      await writeEnvFile(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/restart') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      setTimeout(restartSelf, 300);
       return;
     }
 
