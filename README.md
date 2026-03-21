@@ -8,6 +8,11 @@ Inspired by [OpenClaw](https://github.com/OpenClaw/OpenClaw) — but built direc
 
 ---
 
+> [!WARNING]
+> **BigClaudia is not safe in any way.** It has full access to the system — but that is exactly what makes it smart. Keep in mind that BigClaudia can also modify herself while running (a Node.js restart is required for code changes to take effect).
+
+---
+
 ## What it does
 
 BigClaudia is an autonomous Claude agent with three modes of interaction:
