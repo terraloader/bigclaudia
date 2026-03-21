@@ -104,6 +104,7 @@ These blocks are not shown to the user.
       LANGUAGE:                { label: 'Language',             description: 'UI and log language.' },
       CLAUDE_MODEL:            { label: 'Model',                description: 'Model alias: opus, sonnet, haiku — or a full model ID.' },
       CLAUDE_BIN:              { label: 'CLI Binary Path',      description: 'Path to the Claude CLI binary. Leave empty to use "claude" from PATH.' },
+      DISCORD_ENABLED:         { label: 'Enable Discord',        description: 'Enable or disable the Discord bot integration entirely.' },
       DISCORD_BOT_TOKEN:       { label: 'Bot Token',            description: 'Discord bot token from the Discord Developer Portal.' },
       DISCORD_ALLOWED_USER_ID: { label: 'Allowed User ID',      description: 'Discord user ID that is allowed to interact with the bot.' },
       HEARTBEAT_INTERVAL_MINS: { label: 'Interval (minutes)',   description: 'How often the heartbeat runs in minutes. Default: 30.' },
