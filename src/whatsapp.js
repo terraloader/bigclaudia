@@ -1,0 +1,145 @@
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
+const t = require('./i18n');
+
+const ALLOWED_PHONE = process.env.WHATSAPP_PHONE;      // incoming: filter messages from this number
+const SEND_PHONE    = process.env.WHATSAPP_SEND_PHONE; // outgoing: send heartbeat/mirror messages here
+
+let client = null;
+let messageHandler = null;
+let currentQR = null;      // base64 PNG data URL, null when authenticated
+let authenticated = false;
+
+function createClient() {
+  return new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+  });
+}
+
+/**
+ * Starts the WhatsApp client. Emits QR for scanning; resolves once authenticated.
+ */
+async function start() {
+  if (!ALLOWED_PHONE) throw new Error(t.whatsapp.phoneMissing);
+
+  client = createClient();
+
+  client.on('qr', async (qr) => {
+    currentQR = await qrcode.toDataURL(qr);
+    authenticated = false;
+    console.log(t.whatsapp.qrReady);
+  });
+
+  client.on('ready', () => {
+    currentQR = null;
+    authenticated = true;
+    console.log(t.whatsapp.loggedIn);
+  });
+
+  client.on('message', async (message) => {
+    // Ignore own messages and groups
+    if (message.fromMe) return;
+    if (message.from.includes('@g.us')) return;
+
+    // Only accept messages from the allowed phone number
+    const fromPhone = '+' + message.from.replace('@c.us', '');
+    const normalised = ALLOWED_PHONE.replace(/\s+/g, '').replace(/^\+/, '');
+    if (!message.from.startsWith(normalised)) {
+      console.log(t.whatsapp.unknownPhone(fromPhone));
+      return;
+    }
+
+    if (messageHandler) await messageHandler(message);
+  });
+
+  client.on('auth_failure', (msg) => {
+    console.error(t.whatsapp.authFailed, msg);
+  });
+
+  client.on('disconnected', (reason) => {
+    console.warn(t.whatsapp.disconnected, reason);
+    authenticated = false;
+  });
+
+  await client.initialize();
+}
+
+/**
+ * Registers the handler for incoming messages.
+ */
+function onMessage(handler) {
+  messageHandler = handler;
+}
+
+/**
+ * Sends a message to the configured allowed phone number.
+ */
+async function send(text) {
+  if (!client || !authenticated) throw new Error(t.whatsapp.notReady);
+  const phone = (SEND_PHONE || ALLOWED_PHONE || '').replace(/^\+/, '');
+  if (!phone) throw new Error(t.whatsapp.phoneMissing);
+  const chatId = phone + '@c.us';
+  for (const chunk of splitMessage(text)) {
+    await client.sendMessage(chatId, chunk);
+  }
+}
+
+/**
+ * Sends text to a specific chat (used when replying in-context).
+ */
+async function sendToChat(chat, text) {
+  for (const chunk of splitMessage(text)) {
+    await chat.sendMessage(chunk);
+  }
+}
+
+/**
+ * Continuously refreshes the typing indicator every 8 s until stopped.
+ * Returns a stop function.
+ */
+function keepTyping(chat) {
+  chat.sendStateTyping().catch(() => {});
+  const interval = setInterval(() => chat.sendStateTyping().catch(() => {}), 8000);
+  return () => clearInterval(interval);
+}
+
+/**
+ * Returns the current QR code as a data URL, or null if already authenticated.
+ */
+function getQR() {
+  return { qr: currentQR, authenticated };
+}
+
+/**
+ * Splits long text into chunks of ≤ 4000 characters (WhatsApp limit).
+ */
+function splitMessage(text, maxLength = 3900) {
+  const chunks = [];
+  while (text.length > maxLength) {
+    let splitAt = text.lastIndexOf('\n', maxLength);
+    if (splitAt < maxLength * 0.5) splitAt = maxLength;
+    chunks.push(text.slice(0, splitAt));
+    text = text.slice(splitAt).trimStart();
+  }
+  if (text) chunks.push(text);
+  return chunks;
+}
+
+function isEnabled() {
+  const v = (process.env.WHATSAPP_ENABLED ?? 'false').toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
+function isConfigured() {
+  return isEnabled() && !!process.env.WHATSAPP_PHONE;
+}
+
+async function destroy() {
+  if (client) {
+    await client.destroy().catch(() => {});
+    client = null;
+  }
+}
+
+module.exports = { start, onMessage, send, sendToChat, keepTyping, getQR, isConfigured, destroy };

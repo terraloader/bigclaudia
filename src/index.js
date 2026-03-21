@@ -3,13 +3,15 @@ require('dotenv').config({ override: true });
 const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateInstructions, updateCrontab, needsSummarization, getFileSize, MAX_SIZE } = require('./memory');
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
 const discord = require('./discord');
+const whatsapp = require('./whatsapp');
 const { createServer, recordHeartbeatRun, setMessageProcessor } = require('./webserver');
 const state = require('./state');
 const t = require('./i18n');
 
 /** Processes a chat message with streaming and returns { reply, update_instructions }. */
 async function processWithStreaming(text, via, extraOnDelta = null) {
-  const { instructions } = await readHeartbeat();
+  const { instructions, crontabRaw } = await readHeartbeat();
+  const fullInstructions = instructions + (crontabRaw ? '\n\n' + crontabRaw : '');
   const streamId = state.streamStart(via);
   const onDelta = (delta) => {
     state.streamChunk(streamId, delta);
@@ -17,7 +19,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   };
 
   const { reply, update_instructions, update_crontab } = await chatWithClaude(
-    text, state.getHistory(), instructions, onDelta
+    text, state.getHistory(), fullInstructions, onDelta
   );
 
   state.streamEnd(streamId, reply, via);
@@ -25,6 +27,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
 }
 
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MINS || '30', 10) * 60 * 1000;
+const CRONTAB_GRACE_MINS = parseInt(process.env.CRONTAB_GRACE_MINS || '30', 10);
 
 // ─── Message queue ────────────────────────────────────────────────────────────
 
@@ -121,13 +124,41 @@ async function handleDiscordMessage(message) {
   });
 }
 
+// ─── WhatsApp message handler ─────────────────────────────────────────────────
+
+async function handleWhatsappMessage(message) {
+  const text = message.body.trim();
+  if (!text) return;
+
+  console.log(t.whatsapp.unknownPhone(text.substring(0, 100)).replace('ignored.', '→ received'));
+
+  const msg = state.addChatMessage('user', text, 'whatsapp');
+  const chat = await message.getChat();
+
+  await enqueue(msg.id, async () => {
+    const stopTyping = whatsapp.keepTyping(chat);
+    const chunker = makeDiscordChunker((chunk) => whatsapp.sendToChat(chat, chunk));
+    try {
+      await processMessage(text, 'whatsapp', chunker.onDelta);
+    } catch (err) {
+      console.error(t.whatsapp.error, err.message);
+      const errMsg = t.chat.error(err.message);
+      state.addChatMessage('bot', errMsg, 'whatsapp');
+      try { await whatsapp.sendToChat(chat, errMsg); } catch {}
+    } finally {
+      await chunker.flush();
+      stopTyping();
+    }
+  });
+}
+
 // ─── Heartbeat routine ───────────────────────────────────────────────────────
 
 async function runHeartbeat() {
   console.log(t.heartbeat.startingAt(new Date().toISOString()));
 
   try {
-    const { instructions, history } = await readHeartbeat();
+    const { instructions, crontabRaw, history } = await readHeartbeat();
 
     if (!instructions) {
       console.warn(t.heartbeat.noInstructions);
@@ -135,30 +166,26 @@ async function runHeartbeat() {
     }
 
     const { discord_messages, summary } = await askClaude(
-      t.heartbeat.systemPrompt,
-      t.heartbeat.userMessage(instructions, history)
+      t.heartbeat.systemPrompt(CRONTAB_GRACE_MINS),
+      t.heartbeat.userMessage(instructions, crontabRaw, history)
     );
 
     console.log(t.heartbeat.claudeDone, summary.substring(0, 150));
 
-    const discordResults = [];
     for (const msg of discord_messages) {
-      try {
-        await discord.send(msg);
-        discordResults.push({ msg: msg.substring(0, 80), status: 'OK' });
-      } catch (err) {
-        discordResults.push({ msg: msg.substring(0, 80), status: t.chat.error(err.message) });
-        console.error(t.discord.sendError, err.message);
+      // Show in web UI
+      state.addChatMessage('bot', msg, 'heartbeat');
+      // Mirror to Discord if configured
+      if (discord.isConfigured()) {
+        discord.send(msg).catch((err) => console.error(t.discord.sendError, err.message));
+      }
+      // Mirror to WhatsApp if configured
+      if (whatsapp.isConfigured()) {
+        whatsapp.send(msg).catch((err) => console.error(t.whatsapp.sendError, err.message));
       }
     }
 
-    let historyEntry = summary;
-    if (discordResults.length > 0) {
-      historyEntry += '\n**Discord:**\n' + discordResults
-        .map((r) => `- "${r.msg}..." → ${r.status}`)
-        .join('\n');
-    }
-    await appendToHistory(historyEntry);
+    await appendToHistory(summary);
     recordHeartbeatRun();
 
     const fileSize = await getFileSize();
@@ -226,8 +253,10 @@ async function main() {
   setMessageProcessor(async (text) => {
     const msg = state.addChatMessage('user', text, 'web');
 
+    const isCmd = text.trim() === '/new';
+
     // Forward user message to Discord immediately
-    const forwardToDiscord = text.trim() !== '/new' && discord.isConfigured();
+    const forwardToDiscord = !isCmd && discord.isConfigured();
     if (forwardToDiscord) {
       try {
         await discord.send(text.split('\n').map(l => `> ${l}`).join('\n'));
@@ -236,10 +265,26 @@ async function main() {
       }
     }
 
+    // Forward user message to WhatsApp immediately
+    const forwardToWhatsapp = !isCmd && whatsapp.isConfigured();
+    if (forwardToWhatsapp) {
+      try {
+        await whatsapp.send(text.split('\n').map(l => `> ${l}`).join('\n'));
+      } catch (err) {
+        console.warn(t.whatsapp.mirrorFailed, err.message);
+      }
+    }
+
     await enqueue(msg.id, async () => {
-      const chunker = forwardToDiscord ? makeDiscordChunker() : null;
-      await processMessage(text, 'web', chunker?.onDelta ?? null);
-      if (chunker) await chunker.flush();
+      const dChunker = forwardToDiscord ? makeDiscordChunker() : null;
+      const wChunker = forwardToWhatsapp ? makeDiscordChunker((t) => whatsapp.send(t)) : null;
+      const onDelta = (delta) => {
+        dChunker?.onDelta(delta);
+        wChunker?.onDelta(delta);
+      };
+      await processMessage(text, 'web', onDelta);
+      if (dChunker) await dChunker.flush();
+      if (wChunker) await wChunker.flush();
     });
   });
 
@@ -250,6 +295,12 @@ async function main() {
   if (discord.isConfigured()) {
     discord.onMessage(handleDiscordMessage);
     await discord.start();
+  }
+
+  // Start WhatsApp client (only if enabled)
+  if (whatsapp.isConfigured()) {
+    whatsapp.onMessage(handleWhatsappMessage);
+    await whatsapp.start();
   }
 
   // Run first heartbeat immediately, then on interval

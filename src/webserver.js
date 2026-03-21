@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const { readHeartbeat, getFileSize, MAX_SIZE } = require('./memory');
+const whatsapp = require('./whatsapp');
 const { killCurrentProcess } = require('./claude');
 const state = require('./state');
 const t = require('./i18n');
@@ -18,8 +19,12 @@ const SETTINGS_DEFS = [
   { group: 'discord',    key: 'DISCORD_ALLOWED_USER_ID', type: 'text',     placeholder: '' },
   { group: 'heartbeat',  key: 'HEARTBEAT_INTERVAL_MINS', type: 'number',   placeholder: '30' },
   { group: 'heartbeat',  key: 'HEARTBEAT_MAX_SIZE',      type: 'number',   placeholder: '50000' },
+  { group: 'heartbeat',  key: 'CRONTAB_GRACE_MINS',      type: 'number',   placeholder: '30' },
   { group: 'webServer',  key: 'WEB_PORT',                type: 'number',   placeholder: '3000' },
   { group: 'webServer',  key: 'WEB_HOST',                type: 'text',     placeholder: '127.0.0.1' },
+  { group: 'whatsapp',   key: 'WHATSAPP_ENABLED',        type: 'select', options: ['true', 'false'], placeholder: 'false' },
+  { group: 'whatsapp',   key: 'WHATSAPP_PHONE',          type: 'text',     placeholder: '+491234567890' },
+  { group: 'whatsapp',   key: 'WHATSAPP_SEND_PHONE',     type: 'text',     placeholder: '+491234567890' },
 ];
 
 async function readEnvFile() {
@@ -132,7 +137,12 @@ function getHTML(ui) {
     settingsSaved: ui.settingsSaved,
     settingsRestarting: ui.settingsRestarting,
     settingsRestartConfirm: ui.settingsRestartConfirm,
+    settingsShutdownConfirm: ui.settingsShutdownConfirm,
+    settingsShuttingDown: ui.settingsShuttingDown,
     noCrontabEntries: ui.noCrontabEntries,
+    whatsappQrTitle: ui.whatsappQrTitle,
+    whatsappQrHint: ui.whatsappQrHint,
+    whatsappAuthenticated: ui.whatsappAuthenticated,
   });
 
   return `<!DOCTYPE html>
@@ -146,18 +156,18 @@ function getHTML(ui) {
   :root {
     --bg: #0a0e1a; --bg2: #111827; --bg3: #1a2235; --border: #1e2d45;
     --accent: #00e5a0; --accent2: #0ea5e9; --text: #e2e8f0; --muted: #64748b;
-    --danger: #f43f5e; --radius: 10px; --discord: #5865f2;
+    --danger: #f43f5e; --radius: 10px; --discord: #5865f2; --whatsapp: #25d366;
   }
   [data-theme="light"] {
     --bg: #f0f4f8; --bg2: #e2e8f0; --bg3: #ffffff; --border: #cbd5e1;
     --accent: #00a371; --accent2: #0284c7; --text: #0f172a; --muted: #64748b;
-    --danger: #e11d48; --discord: #4752c4;
+    --danger: #e11d48; --discord: #4752c4; --whatsapp: #128c7e;
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
       --bg: #f0f4f8; --bg2: #e2e8f0; --bg3: #ffffff; --border: #cbd5e1;
       --accent: #00a371; --accent2: #0284c7; --text: #0f172a; --muted: #64748b;
-      --danger: #e11d48; --discord: #4752c4;
+      --danger: #e11d48; --discord: #4752c4; --whatsapp: #128c7e;
     }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -248,6 +258,8 @@ function getHTML(ui) {
   .via-badge { padding: 1px 6px; border-radius: 4px; font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
   .via-web { background: rgba(0,229,160,.15); color: var(--accent); }
   .via-discord { background: rgba(88,101,242,.2); color: var(--discord); }
+  .via-whatsapp { background: rgba(37,211,102,.15); color: var(--whatsapp); }
+  .via-heartbeat { background: rgba(251,191,36,.15); color: #f59e0b; }
 
   .msg-bubble { padding: 10px 14px; border-radius: 14px; font-size: .875rem; line-height: 1.65; word-break: break-word; }
   .msg.user .msg-bubble { background: linear-gradient(135deg, #00b37e, #0ea5e9); color: #fff; border-bottom-right-radius: 4px; }
@@ -301,9 +313,18 @@ function getHTML(ui) {
   .setting-input:focus { border-color: var(--accent); }
   .btn-save { background: var(--accent); color: var(--bg); border: none; border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
   .btn-save:hover { opacity: .85; }
+  .whatsapp-qr-panel { border-top: 1px solid var(--border); padding: 16px 24px; background: var(--bg2); display: none; align-items: center; gap: 20px; flex-shrink: 0; }
+  .whatsapp-qr-panel.visible { display: flex; }
+  .whatsapp-qr-panel img { width: 160px; height: 160px; border-radius: 8px; border: 2px solid var(--border); background: #fff; }
+  .whatsapp-qr-info { display: flex; flex-direction: column; gap: 6px; }
+  .whatsapp-qr-title { font-size: .85rem; font-weight: 600; color: var(--text); }
+  .whatsapp-qr-hint { font-size: .75rem; color: var(--muted); line-height: 1.5; }
+  .whatsapp-qr-ok { font-size: .82rem; color: var(--accent); font-weight: 600; }
   .btn-restart { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 7px; }
   .btn-restart:hover { border-color: #f59e0b; color: #f59e0b; }
   .btn-restart.restarting { border-color: #f59e0b; color: #f59e0b; pointer-events: none; }
+  .btn-shutdown { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-shutdown:hover { border-color: var(--danger); color: var(--danger); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .btn-restart .spin-icon { width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
   .btn-restart.restarting .spin-icon { display: block; }
@@ -398,8 +419,16 @@ function getHTML(ui) {
 <div id="view-settings" class="view">
   <div class="settings-wrap">
     <div class="settings-body" id="settings-body"></div>
+    <div class="whatsapp-qr-panel" id="whatsapp-qr-panel">
+      <img id="whatsapp-qr-img" src="" alt="WhatsApp QR">
+      <div class="whatsapp-qr-info">
+        <div class="whatsapp-qr-title">${ui.whatsappQrTitle}</div>
+        <div class="whatsapp-qr-hint">${ui.whatsappQrHint}</div>
+      </div>
+    </div>
     <div class="settings-footer">
       <div class="settings-status" id="settings-status"></div>
+      <button class="btn-shutdown" id="settings-shutdown-btn">${ui.settingsShutdownBtn}</button>
       <button class="btn-restart" id="settings-restart-btn"><span class="spin-icon"></span>${ui.settingsRestartBtn}</button>
       <button class="btn-save" id="settings-save-btn">${ui.settingsSaveBtn}</button>
     </div>
@@ -514,8 +543,8 @@ function renderMessage(msg) {
   div.className = 'msg ' + msg.source;
   div.id = 'msg-' + msg.id;
 
-  const viaLabel = msg.via === 'discord' ? 'Discord' : 'Web';
-  const viaClass = msg.via === 'discord' ? 'via-discord' : 'via-web';
+  const viaLabel = msg.via === 'discord' ? 'Discord' : msg.via === 'whatsapp' ? 'WhatsApp' : msg.via === 'heartbeat' ? 'Heartbeat' : 'Web';
+  const viaClass = msg.via === 'discord' ? 'via-discord' : msg.via === 'whatsapp' ? 'via-whatsapp' : msg.via === 'heartbeat' ? 'via-heartbeat' : 'via-web';
 
   const content = msg.source === 'bot'
     ? marked.parse(msg.content)
@@ -551,8 +580,8 @@ function createStreamBubble(id, via) {
   if (el) el.remove();
   streamBuffers[id] = '';
 
-  const viaClass = via === 'discord' ? 'via-discord' : 'via-web';
-  const viaLabel = via === 'discord' ? 'Discord' : 'Web';
+  const viaClass = via === 'discord' ? 'via-discord' : via === 'whatsapp' ? 'via-whatsapp' : 'via-web';
+  const viaLabel = via === 'discord' ? 'Discord' : via === 'whatsapp' ? 'WhatsApp' : 'Web';
 
   const div = document.createElement('div');
   div.className = 'msg bot';
@@ -731,8 +760,52 @@ async function restartServer() {
   setTimeout(poll, 1500);
 }
 
+async function shutdownServer() {
+  if (!confirm(STRINGS.settingsShutdownConfirm)) return;
+  document.getElementById('settings-status').textContent = STRINGS.settingsShuttingDown;
+  document.getElementById('settings-shutdown-btn').disabled = true;
+  await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+}
+
 document.getElementById('settings-save-btn').addEventListener('click', saveSettings);
 document.getElementById('settings-restart-btn').addEventListener('click', restartServer);
+document.getElementById('settings-shutdown-btn').addEventListener('click', shutdownServer);
+
+// ── WhatsApp QR ──────────────────────────────────────────────────────────────
+let qrPollTimer = null;
+async function pollWhatsappQR() {
+  try {
+    const { qr, authenticated } = await fetch('/api/whatsapp/qr').then(r => r.json());
+    const panel = document.getElementById('whatsapp-qr-panel');
+    const img   = document.getElementById('whatsapp-qr-img');
+    const info  = panel.querySelector('.whatsapp-qr-info');
+    if (authenticated) {
+      panel.classList.add('visible');
+      img.style.display = 'none';
+      info.innerHTML = \`<div class="whatsapp-qr-ok">\${STRINGS.whatsappAuthenticated}</div>\`;
+      clearInterval(qrPollTimer);
+    } else if (qr) {
+      panel.classList.add('visible');
+      img.style.display = '';
+      img.src = qr;
+      info.innerHTML = \`<div class="whatsapp-qr-title">\${STRINGS.whatsappQrTitle}</div><div class="whatsapp-qr-hint">\${STRINGS.whatsappQrHint}</div>\`;
+    } else {
+      panel.classList.remove('visible');
+    }
+  } catch {}
+}
+function startQRPolling() {
+  pollWhatsappQR();
+  if (qrPollTimer) clearInterval(qrPollTimer);
+  qrPollTimer = setInterval(pollWhatsappQR, 3000);
+}
+// Only poll when settings tab is visible
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    if (tab.dataset.tab === 'settings') startQRPolling();
+    else { clearInterval(qrPollTimer); qrPollTimer = null; }
+  });
+});
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 function applyTheme(mode) {
@@ -830,6 +903,19 @@ function createServer() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       setTimeout(restartSelf, 300);
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/shutdown') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      setTimeout(() => process.exit(0), 300);
+      return;
+    }
+
+    if (req.method === 'GET' && url === '/api/whatsapp/qr') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(whatsapp.getQR()));
       return;
     }
 

@@ -4,3 +4,5 @@ heartbeat.md
 heartbeat.log
 memory/
 .DS_Store
+.wwebjs_auth/
+.wwebjs_cache/
