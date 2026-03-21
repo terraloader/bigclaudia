@@ -4,7 +4,7 @@ const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateIns
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
 const discord = require('./discord');
 const whatsapp = require('./whatsapp');
-const { createServer, recordHeartbeatRun, setMessageProcessor } = require('./webserver');
+const { createServer, recordHeartbeatRun, setMessageProcessor, restartSelf } = require('./webserver');
 const state = require('./state');
 const t = require('./i18n');
 
@@ -75,6 +75,13 @@ async function processMessage(text, via, extraOnDelta = null) {
     messageQueue.length = 0;
     state.clearSession();
     return { reply: t.chat.sessionReset };
+  }
+
+  if (text.trim() === '/restart') {
+    killCurrentProcess();
+    messageQueue.length = 0;
+    setTimeout(restartSelf, 300);
+    return { reply: t.chat.restarting };
   }
 
   const { reply, update_instructions, update_crontab } = await processWithStreaming(text, via, extraOnDelta);
