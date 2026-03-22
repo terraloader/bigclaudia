@@ -167,6 +167,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
       CRONTAB_GRACE_MINS:      { label: 'Cron-Toleranzfenster (Min)', description: 'Wie viele Minuten nach dem geplanten Zeitpunkt ein Cron-Job noch ausgeführt werden darf. Standard: 30.' },
       WEB_PORT:                { label: 'Port',                     description: 'Port für die Web-UI. Standard: 3000.' },
       WEB_HOST:                { label: 'Host',                     description: 'Bind-Adresse. 127.0.0.1 = nur lokal, 0.0.0.0 = alle Schnittstellen.' },
+      SUPPRESS_CHANNELS_ON_FOCUS: { label: 'Kanäle bei Fokus unterdrücken', description: 'Wenn aktiviert, werden Nachrichten nicht an Discord/WhatsApp weitergeleitet, solange der Web-UI-Tab fokussiert ist.' },
       WHATSAPP_ENABLED:        { label: 'WhatsApp aktivieren',      description: 'WhatsApp-Integration aktivieren. Beim ersten Start ist ein QR-Scan erforderlich.' },
       WHATSAPP_PHONE:          { label: 'Erlaubte Nummer',          description: 'Telefonnummer, die mit dem Bot interagieren darf (z.B. +491234567890). Hinweis: Dies ist manchmal nicht die eigene Nummer – bitte Terminal-Logs nach dem ersten Verbinden prüfen.' },
       WHISPER_LOCAL_ENABLED:   { label: 'Lokales Whisper starten',    description: 'Whisper-Docker-Container beim App-Start automatisch starten.' },

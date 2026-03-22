@@ -23,6 +23,7 @@ const SETTINGS_DEFS = [
   { group: 'heartbeat',  key: 'CRONTAB_GRACE_MINS',      type: 'number',   placeholder: '30' },
   { group: 'webServer',  key: 'WEB_PORT',                type: 'number',   placeholder: '3000' },
   { group: 'webServer',  key: 'WEB_HOST',                type: 'text',     placeholder: '127.0.0.1' },
+  { group: 'webServer',  key: 'SUPPRESS_CHANNELS_ON_FOCUS', type: 'select', options: ['true', 'false'], placeholder: 'false' },
   { group: 'whisper',    key: 'WHISPER_LOCAL_ENABLED',     type: 'select', options: ['true', 'false'], placeholder: 'false' },
   { group: 'whisper',    key: 'WHISPER_URL',              type: 'text',     placeholder: 'http://localhost:9000' },
   { group: 'whisper',    key: 'WHISPER_LANGUAGE',         type: 'text',     placeholder: 'de' },
@@ -1071,6 +1072,24 @@ function finalizeStreamBubble(id) {
   }
 }
 
+// ── Focus tracking (SUPPRESS_CHANNELS_ON_FOCUS) ────────────────────────────
+let _lastFocusState = null;
+function reportFocus() {
+  const focused = document.hasFocus();
+  if (focused !== _lastFocusState) {
+    _lastFocusState = focused;
+    fetch('/api/focus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focused }),
+    }).catch(() => {});
+  }
+}
+setInterval(reportFocus, 2000);
+window.addEventListener('focus', reportFocus);
+window.addEventListener('blur', reportFocus);
+reportFocus();
+
 // ── SSE ─────────────────────────────────────────────────────────────────────
 let pendingReply = false;
 
@@ -1507,6 +1526,15 @@ function createServer() {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message, voices: [], selected: '' }));
       }
+      return;
+    }
+
+    // Web UI focus tracking (for SUPPRESS_CHANNELS_ON_FOCUS)
+    if (req.method === 'POST' && url === '/api/focus') {
+      const body = await readBody(req).catch(() => ({}));
+      state.setWebUiFocused(!!body.focused);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 
