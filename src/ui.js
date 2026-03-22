@@ -1062,7 +1062,8 @@ function finalizeStreamBubble(id, cleanContent) {
   if (bubble) {
     bubble.classList.remove('streaming');
     // Re-render with clean content (strips any custom tags that leaked during streaming)
-    if (cleanContent !== undefined) {
+    // Skip if empty (e.g. when /stop kills the process mid-stream)
+    if (cleanContent) {
       const textSegs = bubble.querySelectorAll('.text-segment');
       if (textSegs.length) {
         // Replace content of last text segment (or all if only one)
@@ -1135,9 +1136,23 @@ reportFocus();
 // ── SSE ─────────────────────────────────────────────────────────────────────
 let pendingReply = false;
 
+let _currentSSE = null;
+
 function connectSSE() {
+  // Close any existing EventSource to prevent duplicates
+  if (_currentSSE) {
+    _currentSSE.onmessage = null;
+    _currentSSE.onerror = null;
+    _currentSSE.close();
+    _currentSSE = null;
+  }
+
   const es = new EventSource('/api/events');
+  _currentSSE = es;
   es.onmessage = (e) => {
+    // Ignore events from stale connections
+    if (es !== _currentSSE) { es.close(); return; }
+
     const data = JSON.parse(e.data);
 
     if (data.type === 'clear') {
@@ -1240,13 +1255,22 @@ function connectSSE() {
       if (cb) cb.scrollTop = cb.scrollHeight;
 
     } else if (data.type === 'history') {
+      document.getElementById('chat-messages').innerHTML = '';
       data.messages.forEach(renderMessage);
       scrollChat();
       document.getElementById('loading').style.opacity = '0';
       setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 300);
     }
   };
-  es.onerror = () => setTimeout(connectSSE, 3000);
+  es.onerror = () => {
+    // Close this EventSource to prevent its built-in auto-reconnection
+    es.close();
+    // Only reconnect if this is still the active connection
+    if (es === _currentSSE) {
+      _currentSSE = null;
+      setTimeout(connectSSE, 3000);
+    }
+  };
 }
 
 // ── Console output ──────────────────────────────────────────────────────────
@@ -1270,7 +1294,15 @@ function appendConsoleLine(entry) {
 async function stopChat() {
   // Clean up UI immediately — don't wait for stream_end via SSE
   setWaiting(false);
-  document.querySelectorAll('.msg-bubble.streaming').forEach(el => el.classList.remove('streaming'));
+  document.querySelectorAll('.msg-bubble.streaming').forEach(el => {
+    el.classList.remove('streaming');
+    // Remove typing dots if still present (no content arrived yet)
+    const dots = el.querySelector('.typing-dots');
+    if (dots) dots.remove();
+    // Clean up streamData for this bubble
+    const bubbleId = el.id.replace('bubble-', '');
+    delete streamData[bubbleId];
+  });
   try {
     await fetch('/api/stop', { method: 'POST' });
   } catch(e) {
