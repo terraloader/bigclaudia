@@ -10,8 +10,52 @@ const { createServer, recordHeartbeatRun, setMessageProcessor, setOnStop, restar
 const state = require('./state');
 const t = require('./i18n');
 
+const fs = require('fs');
+
 const WHISPER_LOCAL_ENABLED = (process.env.WHISPER_LOCAL_ENABLED || 'false').toLowerCase() === 'true';
 const SUPPRESS_CHANNELS_ON_FOCUS = (process.env.SUPPRESS_CHANNELS_ON_FOCUS || 'false').toLowerCase() === 'true';
+
+const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
+
+/**
+ * Extracts image file paths from tool use input JSON.
+ * Mirrors the logic from the Web UI's extractImagePaths().
+ */
+function extractImagePaths(text) {
+  const paths = [];
+  // Try JSON parse for file_path
+  try {
+    const obj = JSON.parse(text);
+    if (obj.file_path && IMAGE_EXTS.test(obj.file_path)) paths.push(obj.file_path);
+  } catch (e) {}
+  // Also scan for absolute paths in raw text
+  const regex = /(\/[^\s"',}]+?\.(png|jpe?g|gif|webp|bmp|svg|ico))/gi;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    if (!paths.includes(m[1])) paths.push(m[1]);
+  }
+  return paths;
+}
+
+/**
+ * Sends image files to Discord and WhatsApp channels (non-blocking).
+ */
+function sendImagesToChannels(imagePaths) {
+  if (shouldSuppressChannels()) return;
+  for (const imgPath of imagePaths) {
+    if (!fs.existsSync(imgPath)) continue;
+    if (discord.isConfigured()) {
+      discord.sendImageFile(imgPath).catch((err) =>
+        console.error('[Image→Discord]', err.message)
+      );
+    }
+    if (whatsapp.isConfigured()) {
+      whatsapp.sendImage(imgPath).catch((err) =>
+        console.error('[Image→WhatsApp]', err.message)
+      );
+    }
+  }
+}
 
 /** Returns true when channel output (Discord/WhatsApp) should be suppressed. */
 function shouldSuppressChannels() {
@@ -29,6 +73,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   let thinkingChars = 0;
   let toolUseChars = 0;
   let currentToolName = '';
+  let toolUseInputBuffer = '';  // accumulates tool use input JSON for image detection
   const ui = t.ui;
 
   const onDelta = (delta) => {
@@ -56,10 +101,12 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
       blockStartTime = Date.now();
       toolUseChars = 0;
       currentToolName = name;
+      toolUseInputBuffer = '';
       state.streamToolUseStart(streamId, name);
     },
     onToolUseInput: (json) => {
       toolUseChars += json.length;
+      toolUseInputBuffer += json;
       state.streamToolUseChunk(streamId, json);
     },
     onToolUseEnd: () => {
@@ -68,6 +115,13 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
       state.streamToolUseEnd(streamId, summary);
       // Emit summary for channels
       if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+      // Send images from Read tool results to Discord/WhatsApp
+      if (currentToolName === 'Read') {
+        const imgPaths = extractImagePaths(toolUseInputBuffer);
+        if (imgPaths.length > 0) {
+          sendImagesToChannels(imgPaths);
+        }
+      }
     },
     onRedactedThinking: () => {
       const summary = ui.redactedThinkingSummary(0);

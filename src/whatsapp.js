@@ -95,6 +95,25 @@ async function sendToChat(chat, text) {
 }
 
 /**
+ * Sends an image file as a message.
+ * If chat is provided, sends to that chat; otherwise sends to the configured phone.
+ */
+async function sendImage(imagePath, chat = null) {
+  if (!client || !authenticated) throw new Error(t.whatsapp.notReady);
+  const { MessageMedia } = require('whatsapp-web.js');
+  const media = MessageMedia.fromFilePath(imagePath);
+
+  if (chat) {
+    await chat.sendMessage(media);
+  } else {
+    const phone = (SEND_PHONE || ALLOWED_PHONE || '').replace(/^\+/, '');
+    if (!phone) throw new Error(t.whatsapp.phoneMissing);
+    const chatId = phone + '@c.us';
+    await client.sendMessage(chatId, media);
+  }
+}
+
+/**
  * Sends an audio buffer as a voice message.
  * If chat is provided, sends to that chat; otherwise sends to the configured phone.
  */
@@ -161,4 +180,4 @@ async function destroy() {
   }
 }
 
-module.exports = { start, onMessage, send, sendAudio, sendToChat, keepTyping, getQR, isConfigured, destroy };
+module.exports = { start, onMessage, send, sendImage, sendAudio, sendToChat, keepTyping, getQR, isConfigured, destroy };

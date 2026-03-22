@@ -440,6 +440,31 @@ function getHTML(ui) {
     max-height: 300px;
     overflow-y: auto;
   }
+  .tool-use-block .tool-use-thumbnail {
+    display: block;
+    max-width: 240px;
+    max-height: 180px;
+    border-radius: 6px;
+    margin: 6px 6px 4px;
+    cursor: pointer;
+    border: 1px solid var(--border, #333);
+    transition: transform 0.2s ease;
+    object-fit: contain;
+  }
+  .tool-use-block .tool-use-thumbnail:hover {
+    transform: scale(1.05);
+  }
+  /* Fullscreen overlay for image preview */
+  .img-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.85); z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+    cursor: zoom-out;
+  }
+  .img-overlay img {
+    max-width: 95vw; max-height: 95vh; border-radius: 8px;
+    object-fit: contain;
+  }
   .tool-use-block.streaming-tool-use .tool-use-summary::after {
     content: '…';
     animation: thinkingPulse 1.5s ease-in-out infinite;
@@ -956,6 +981,7 @@ function showToolUseIndicator(id, toolName) {
   const block = document.createElement('div');
   block.className = 'tool-use-block streaming-tool-use';
   block.dataset.index = idx;
+  block.dataset.toolName = toolName || '';
   const label = toolName ? STRINGS.toolUse + ': ' + toolName : STRINGS.toolUse;
   block.innerHTML = '<div class="tool-use-summary" onclick="toggleToolUse(this)"><span class="chevron">›</span> <span>🔧</span> ' + label + '</div><div class="tool-use-content-wrapper"><div class="tool-use-content" id="tool-use-content-' + id + '-' + idx + '"></div></div>';
   bubble.appendChild(block);
@@ -971,6 +997,31 @@ function appendToolUseChunk(id, text) {
     el.textContent = data.thinkingBuffers[idx];
     el.scrollTop = el.scrollHeight;
   }
+}
+
+function extractImagePaths(text) {
+  const IMAGE_EXTS = /\\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
+  const paths = [];
+  // Try JSON parse for file_path
+  try {
+    const obj = JSON.parse(text);
+    if (obj.file_path && IMAGE_EXTS.test(obj.file_path)) paths.push(obj.file_path);
+  } catch(e) {}
+  // Also scan for absolute paths in raw text
+  const regex = /(\\/[^\\s"',}]+?\\.(png|jpe?g|gif|webp|bmp|svg|ico))/gi;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    if (!paths.includes(m[1])) paths.push(m[1]);
+  }
+  return paths;
+}
+
+function openImageOverlay(src) {
+  const overlay = document.createElement('div');
+  overlay.className = 'img-overlay';
+  overlay.innerHTML = '<img src="' + src + '">';
+  overlay.onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
 }
 
 function hideToolUseIndicator(id, summary) {
@@ -992,6 +1043,20 @@ function hideToolUseIndicator(id, summary) {
         if (summaryEl) {
           summaryEl.innerHTML = '<span class="chevron">›</span> <span>🔧</span> ' + summary;
         }
+      }
+      // Detect image paths and add thumbnails only for Read tool (outside wrapper so visible when collapsed)
+      const isReadTool = block.dataset.toolName === 'Read';
+      const imgPaths = isReadTool ? extractImagePaths(content) : [];
+      if (imgPaths.length > 0) {
+        imgPaths.forEach(p => {
+          const img = document.createElement('img');
+          img.className = 'tool-use-thumbnail';
+          img.src = '/api/file?path=' + encodeURIComponent(p);
+          img.alt = p.split('/').pop();
+          img.title = p;
+          img.onclick = (e) => { e.stopPropagation(); openImageOverlay(img.src); };
+          block.appendChild(img);
+        });
       }
       collapseToolUseBlock(block);
     }
@@ -1657,6 +1722,26 @@ function createServer() {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // Serve local files (images) for tool-block thumbnails
+    if (req.method === 'GET' && url === '/api/file') {
+      const qs = req.url.split('?')[1] || '';
+      const params = new URLSearchParams(qs);
+      const filePath = params.get('path');
+      if (!filePath) { res.writeHead(400); res.end(); return; }
+      const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico'];
+      const ext = path.extname(filePath).toLowerCase();
+      if (!IMAGE_EXTS.includes(ext)) { res.writeHead(403); res.end('Only image files allowed'); return; }
+      try {
+        const data = await fs.readFile(filePath);
+        const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }[ext] || 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' });
+        res.end(data);
+      } catch (err) {
+        res.writeHead(404); res.end('File not found');
       }
       return;
     }
