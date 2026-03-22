@@ -15,24 +15,24 @@ const SETTINGS_DEFS = [
   { group: 'general',    key: 'LANGUAGE',                type: 'select', options: ['en', 'de'], placeholder: 'en' },
   { group: 'claude',     key: 'CLAUDE_MODEL',            type: 'text',     placeholder: 'opus' },
   { group: 'claude',     key: 'CLAUDE_BIN',              type: 'text',     placeholder: 'claude' },
-  { group: 'discord',    key: 'DISCORD_ENABLED',         type: 'select', options: ['true', 'false'], placeholder: 'false' },
-  { group: 'discord',    key: 'DISCORD_BOT_TOKEN',       type: 'password', placeholder: '' },
-  { group: 'discord',    key: 'DISCORD_ALLOWED_USER_ID', type: 'text',     placeholder: '' },
+  { group: 'discord',    key: 'DISCORD_ENABLED',         type: 'toggle', placeholder: 'false' },
+  { group: 'discord',    key: 'DISCORD_BOT_TOKEN',       type: 'password', placeholder: '', dependsOn: 'DISCORD_ENABLED' },
+  { group: 'discord',    key: 'DISCORD_ALLOWED_USER_ID', type: 'text',     placeholder: '', dependsOn: 'DISCORD_ENABLED' },
   { group: 'heartbeat',  key: 'HEARTBEAT_INTERVAL_MINS', type: 'number',   placeholder: '30' },
   { group: 'heartbeat',  key: 'HEARTBEAT_MAX_SIZE',      type: 'number',   placeholder: '50000' },
   { group: 'heartbeat',  key: 'CRONTAB_GRACE_MINS',      type: 'number',   placeholder: '30' },
   { group: 'webServer',  key: 'WEB_PORT',                type: 'number',   placeholder: '3000' },
   { group: 'webServer',  key: 'WEB_HOST',                type: 'text',     placeholder: '127.0.0.1' },
-  { group: 'webServer',  key: 'SUPPRESS_CHANNELS_ON_FOCUS', type: 'select', options: ['true', 'false'], placeholder: 'false' },
-  { group: 'whisper',    key: 'WHISPER_LOCAL_ENABLED',     type: 'select', options: ['true', 'false'], placeholder: 'false' },
-  { group: 'whisper',    key: 'WHISPER_URL',              type: 'text',     placeholder: 'http://localhost:9000' },
-  { group: 'whisper',    key: 'WHISPER_LANGUAGE',         type: 'text',     placeholder: 'de' },
-  { group: 'whatsapp',   key: 'WHATSAPP_ENABLED',        type: 'select', options: ['true', 'false'], placeholder: 'false' },
-  { group: 'whatsapp',   key: 'WHATSAPP_PHONE',          type: 'text',     placeholder: '+491234567890' },
-  { group: 'whatsapp',   key: 'WHATSAPP_SEND_PHONE',     type: 'text',     placeholder: '+491234567890' },
-  { group: 'elevenlabs', key: 'ELEVENLABS_ENABLED',      type: 'select', options: ['true', 'false'], placeholder: 'false' },
-  { group: 'elevenlabs', key: 'ELEVENLABS_API_KEY',      type: 'password', placeholder: '' },
-  { group: 'elevenlabs', key: 'ELEVENLABS_VOICE',        type: 'voice-select', placeholder: '' },
+  { group: 'webServer',  key: 'SUPPRESS_CHANNELS_ON_FOCUS', type: 'toggle', placeholder: 'false' },
+  { group: 'whisper',    key: 'WHISPER_LOCAL_ENABLED',     type: 'toggle', placeholder: 'false' },
+  { group: 'whisper',    key: 'WHISPER_URL',              type: 'text',     placeholder: 'http://localhost:9000', dependsOn: 'WHISPER_LOCAL_ENABLED' },
+  { group: 'whisper',    key: 'WHISPER_LANGUAGE',         type: 'text',     placeholder: 'de', dependsOn: 'WHISPER_LOCAL_ENABLED' },
+  { group: 'whatsapp',   key: 'WHATSAPP_ENABLED',        type: 'toggle', placeholder: 'false' },
+  { group: 'whatsapp',   key: 'WHATSAPP_PHONE',          type: 'text',     placeholder: '+491234567890', dependsOn: 'WHATSAPP_ENABLED' },
+  { group: 'whatsapp',   key: 'WHATSAPP_SEND_PHONE',     type: 'text',     placeholder: '+491234567890', dependsOn: 'WHATSAPP_ENABLED' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_ENABLED',      type: 'toggle', placeholder: 'false' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_API_KEY',      type: 'password', placeholder: '', dependsOn: 'ELEVENLABS_ENABLED' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_VOICE',        type: 'voice-select', placeholder: '', dependsOn: 'ELEVENLABS_ENABLED' },
 ];
 
 async function readEnvFile() {
@@ -214,6 +214,11 @@ function getHTML(ui) {
   .theme-btn:hover { color: var(--text); }
   .theme-btn.active { background: var(--accent); color: var(--bg); }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse 2s ease-in-out infinite; display: inline-block; margin-right: 5px; }
+  .suppress-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; transition: background .3s, box-shadow .3s; }
+  .suppress-dot.active { background: #ef4444; box-shadow: 0 0 5px #ef4444; animation: pulse 2s ease-in-out infinite; }
+  .suppress-dot.inactive { background: #22c55e; box-shadow: 0 0 5px #22c55e; animation: pulse 2s ease-in-out infinite; }
+  .suppress-dot.hidden { display: none; }
+  .suppress-indicator { display: flex; align-items: center; font-size: .75rem; color: var(--muted); cursor: default; }
 
   /* ── Tabs ── */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
@@ -508,6 +513,19 @@ function getHTML(ui) {
   .setting-desc { font-size: .73rem; color: var(--muted); margin-bottom: 9px; line-height: 1.5; }
   .setting-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: .85rem; font-family: monospace; outline: none; transition: border-color .15s; box-sizing: border-box; }
   .setting-input:focus { border-color: var(--accent); }
+
+  /* Toggle Switch */
+  .setting-toggle-wrap { display: flex; align-items: center; gap: 10px; }
+  .setting-toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .setting-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .setting-toggle .toggle-track { position: absolute; inset: 0; background: var(--border); border-radius: 12px; cursor: pointer; transition: background .2s; }
+  .setting-toggle .toggle-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: var(--text); border-radius: 50%; transition: transform .2s; }
+  .setting-toggle input:checked + .toggle-track { background: var(--accent); }
+  .setting-toggle input:checked + .toggle-track::after { transform: translateX(20px); background: var(--bg); }
+  .setting-toggle-label { font-size: .78rem; color: var(--muted); user-select: none; }
+
+  /* Dependent settings hidden when parent toggle is off */
+  .setting-item.setting-hidden { display: none; }
   .btn-save { background: var(--accent); color: var(--bg); border: none; border-radius: 8px; padding: 8px 22px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
   .btn-save:hover { opacity: .85; }
   .whatsapp-qr-panel { border-top: 1px solid var(--border); padding: 16px 24px; background: var(--bg2); display: none; align-items: center; gap: 20px; flex-shrink: 0; }
@@ -547,6 +565,7 @@ function getHTML(ui) {
       <button class="theme-btn" data-mode="auto" title="Auto">⚙️</button>
       <button class="theme-btn" data-mode="dark" title="Dark">🌙</button>
     </div>
+    <span class="suppress-indicator" id="suppress-indicator" title="Channel suppression"><span class="suppress-dot hidden" id="suppress-dot"></span><span id="suppress-label"></span></span>
     <span><span class="status-dot"></span>online</span>
   </div>
 </header>
@@ -1074,6 +1093,27 @@ function finalizeStreamBubble(id) {
 
 // ── Focus tracking (SUPPRESS_CHANNELS_ON_FOCUS) ────────────────────────────
 let _lastFocusState = null;
+let _suppressEnabled = false;
+const _suppressDot = document.getElementById('suppress-dot');
+const _suppressLabel = document.getElementById('suppress-label');
+
+function updateSuppressDot() {
+  if (!_suppressEnabled) {
+    _suppressDot.className = 'suppress-dot hidden';
+    _suppressLabel.textContent = '';
+    return;
+  }
+  const focused = document.hasFocus();
+  _suppressDot.classList.remove('hidden');
+  if (focused) {
+    _suppressDot.className = 'suppress-dot active';
+    _suppressLabel.textContent = 'muted';
+  } else {
+    _suppressDot.className = 'suppress-dot inactive';
+    _suppressLabel.textContent = 'forwarding';
+  }
+}
+
 function reportFocus() {
   const focused = document.hasFocus();
   if (focused !== _lastFocusState) {
@@ -1082,9 +1122,29 @@ function reportFocus() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ focused }),
+    }).then(r => r.json()).then(data => {
+      if (typeof data.suppressEnabled === 'boolean') {
+        _suppressEnabled = data.suppressEnabled;
+      }
+      updateSuppressDot();
     }).catch(() => {});
   }
+  updateSuppressDot();
 }
+
+// Initial check of suppress feature status
+fetch('/api/focus', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ focused: document.hasFocus() }),
+}).then(r => r.json()).then(data => {
+  _lastFocusState = document.hasFocus();
+  if (typeof data.suppressEnabled === 'boolean') {
+    _suppressEnabled = data.suppressEnabled;
+  }
+  updateSuppressDot();
+}).catch(() => {});
+
 setInterval(reportFocus, 2000);
 window.addEventListener('focus', reportFocus);
 window.addEventListener('blur', reportFocus);
@@ -1314,19 +1374,52 @@ async function loadSettings() {
           } else {
             input = \`<input class="setting-input" type="text" name="\${d.key}" value="\${val}" placeholder="Enable ElevenLabs to load voices">\`;
           }
+        } else if (d.type === 'toggle') {
+          const checked = (values[d.key] || d.placeholder) === 'true';
+          input = \`<div class="setting-toggle-wrap">
+            <label class="setting-toggle">
+              <input type="checkbox" class="setting-input" name="\${d.key}" data-toggle="\${d.key}" \${checked ? 'checked' : ''}>
+              <span class="toggle-track"></span>
+            </label>
+            <span class="setting-toggle-label">\${checked ? 'On' : 'Off'}</span>
+          </div>\`;
         } else if (d.type === 'select') {
           input = \`<select class="setting-input" name="\${d.key}">\${d.options.map(o => \`<option value="\${o}"\${(values[d.key] || d.placeholder) === o ? ' selected' : ''}>\${o}</option>\`).join('')}</select>\`;
         } else {
           input = \`<input class="setting-input" type="\${d.type === 'password' ? 'password' : d.type === 'number' ? 'number' : 'text'}" name="\${d.key}" value="\${val}" placeholder="\${d.placeholder}">\`;
         }
-        return \`<div class="setting-item"><div class="setting-label">\${d.label}</div><div class="setting-desc">\${d.description}</div>\${input}</div>\`;
+        const depAttr = d.dependsOn ? \` data-depends-on="\${d.dependsOn}"\` : '';
+        return \`<div class="setting-item\${d.dependsOn ? ' setting-dep' : ''}"\${depAttr}><div class="setting-label">\${d.label}</div><div class="setting-desc">\${d.description}</div>\${input}</div>\`;
       }).join('')}
     </div>\`).join('');
+
+  // Toggle switch: update label & show/hide dependent settings
+  function updateToggleDeps(toggleKey, isOn) {
+    document.querySelectorAll(\`[data-depends-on="\${toggleKey}"]\`).forEach(el => {
+      el.classList.toggle('setting-hidden', !isOn);
+    });
+  }
+  document.querySelectorAll('#settings-body [data-toggle]').forEach(cb => {
+    const toggleKey = cb.dataset.toggle;
+    // Set initial visibility
+    updateToggleDeps(toggleKey, cb.checked);
+    // Listen for changes
+    cb.addEventListener('change', () => {
+      const label = cb.closest('.setting-toggle-wrap').querySelector('.setting-toggle-label');
+      if (label) label.textContent = cb.checked ? 'On' : 'Off';
+      updateToggleDeps(toggleKey, cb.checked);
+    });
+  });
 }
 
 async function saveSettings() {
   const updates = {};
-  document.querySelectorAll('#settings-body .setting-input').forEach(el => { if (el.name) updates[el.name] = el.value; });
+  document.querySelectorAll('#settings-body .setting-input').forEach(el => {
+    if (!el.name) return;
+    // Toggle checkboxes: save as 'true'/'false' string (even when hidden)
+    if (el.type === 'checkbox') { updates[el.name] = el.checked ? 'true' : 'false'; }
+    else { updates[el.name] = el.value; }
+  });
   await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
   const st = document.getElementById('settings-status');
   st.textContent = STRINGS.settingsSaved;
@@ -1533,8 +1626,10 @@ function createServer() {
     if (req.method === 'POST' && url === '/api/focus') {
       const body = await readBody(req).catch(() => ({}));
       state.setWebUiFocused(!!body.focused);
+      const env = await readEnvFile();
+      const suppressEnabled = (env.SUPPRESS_CHANNELS_ON_FOCUS || 'false').toLowerCase() === 'true';
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok: true, suppressEnabled }));
       return;
     }
 
