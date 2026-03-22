@@ -305,6 +305,28 @@ function getHTML(ui) {
   .msg-bubble strong { color: var(--accent); }
   .msg.user .msg-bubble strong { color: #fff; font-weight: 700; }
 
+  /* ── Tables ── */
+  .msg-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .82rem; }
+  .msg-bubble th, .msg-bubble td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .msg-bubble th { font-weight: 600; color: var(--accent); font-size: .75rem; text-transform: uppercase; letter-spacing: .3px; border-bottom-width: 2px; }
+  .msg-bubble tr:last-child td { border-bottom: none; }
+  .msg-bubble tbody tr:hover { background: rgba(255,255,255,.03); }
+  [data-theme="light"] .msg-bubble tbody tr:hover { background: rgba(0,0,0,.03); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble tbody tr:hover { background: rgba(0,0,0,.03); } }
+
+  /* ── Horizontal Rule ── */
+  .msg-bubble hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--border), var(--accent2), var(--border), transparent); margin: 14px 0; }
+
+  /* ── Links ── */
+  .msg-bubble a { color: #22d3c4; text-decoration: none; border-bottom: 1px solid rgba(34,211,196,.3); transition: border-color .15s, color .15s; }
+  .msg-bubble a:hover { color: #5eead4; border-bottom-color: #5eead4; }
+  [data-theme="light"] .msg-bubble a { color: #0d9488; border-bottom-color: rgba(13,148,136,.3); }
+  [data-theme="light"] .msg-bubble a:hover { color: #0f766e; border-bottom-color: #0f766e; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble a { color: #0d9488; border-bottom-color: rgba(13,148,136,.3); } }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble a:hover { color: #0f766e; border-bottom-color: #0f766e; } }
+  .msg.user .msg-bubble a { color: #cffafe; border-bottom-color: rgba(207,250,254,.4); }
+  .msg.user .msg-bubble a:hover { color: #fff; border-bottom-color: #fff; }
+
   /* Queued messages */
   .msg.queued .msg-bubble { opacity: 0.55; font-style: italic; }
 
@@ -314,6 +336,15 @@ function getHTML(ui) {
   .typing-dots span { width:7px; height:7px; border-radius:50%; background:var(--muted); animation:typingDot 1.4s ease-in-out infinite; }
   .typing-dots span:nth-child(2) { animation-delay:.2s; }
   .typing-dots span:nth-child(3) { animation-delay:.4s; }
+
+  /* Thinking indicator */
+  @keyframes thinkingPulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+  .thinking-indicator {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.85em; color: var(--muted); padding: 4px 0;
+    animation: thinkingPulse 2s ease-in-out infinite;
+  }
+  .thinking-indicator .brain { font-size: 1.1em; }
 
   /* Streaming shimmer on bubble background */
   @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
@@ -672,14 +703,38 @@ function createStreamBubble(id, via) {
   document.getElementById('chat-messages').appendChild(div);
 }
 
+function showThinkingIndicator(id) {
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  // Replace typing dots with thinking indicator
+  const dots = bubble.querySelector('.typing-dots');
+  if (dots) dots.remove();
+  // Only add if not already present
+  if (!bubble.querySelector('.thinking-indicator')) {
+    const indicator = document.createElement('span');
+    indicator.className = 'thinking-indicator';
+    indicator.innerHTML = '<span class="brain">🧠</span> Thinking\u2026';
+    bubble.appendChild(indicator);
+  }
+}
+
+function hideThinkingIndicator(id) {
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  const indicator = bubble.querySelector('.thinking-indicator');
+  if (indicator) indicator.remove();
+}
+
 function appendStreamChunk(id, text) {
   if (streamBuffers[id] === undefined) return;
   streamBuffers[id] += text;
   const bubble = document.getElementById('bubble-' + id);
   if (bubble) {
-    // Remove typing dots once real content arrives
+    // Remove typing dots and thinking indicator once real content arrives
     const dots = bubble.querySelector('.typing-dots');
     if (dots) dots.remove();
+    const thinking = bubble.querySelector('.thinking-indicator');
+    if (thinking) thinking.remove();
     bubble.innerHTML = marked.parse(streamBuffers[id]);
   }
 }
@@ -687,7 +742,9 @@ function appendStreamChunk(id, text) {
 function finalizeStreamBubble(id) {
   delete streamBuffers[id];
   const bubble = document.getElementById('bubble-' + id);
-  if (bubble) bubble.classList.remove('streaming');
+  if (bubble) {
+    bubble.classList.remove('streaming');
+  }
 }
 
 // ── SSE ─────────────────────────────────────────────────────────────────────
@@ -715,6 +772,13 @@ function connectSSE() {
       setWaiting(true);
       createStreamBubble(data.id, data.via);
       if (chatVisible) scrollChat();
+
+    } else if (data.type === 'stream_thinking_start') {
+      showThinkingIndicator(data.id);
+      if (chatVisible) scrollChat();
+
+    } else if (data.type === 'stream_thinking_end') {
+      hideThinkingIndicator(data.id);
 
     } else if (data.type === 'stream_chunk') {
       appendStreamChunk(data.id, data.text);

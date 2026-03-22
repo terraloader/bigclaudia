@@ -66,9 +66,10 @@ async function askClaude(systemPrompt, userMessage) {
  * @param {{ role: 'user'|'assistant', content: string }[]} history
  * @param {string} heartbeatInstructions
  * @param {(delta: string) => void} [onDelta] - called per text delta
+ * @param {{ onThinkingStart?: () => void, onThinkingEnd?: () => void }} [callbacks] - optional thinking callbacks
  * @returns {{ reply: string, update_instructions: string }}
  */
-async function chatWithClaude(userMessage, history = [], heartbeatInstructions = '', onDelta = null) {
+async function chatWithClaude(userMessage, history = [], heartbeatInstructions = '', onDelta = null, callbacks = {}) {
   const historyStr = history
     .map((h) => `${h.role === 'user' ? t.claude.roleUser : t.claude.roleAssistant}: ${h.content}`)
     .join('\n');
@@ -87,19 +88,44 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
   ];
 
   let fullText = '';
+  let isThinking = false;
+  let hasSeenTextBlock = false;
 
   await streamCli(args, prompt, (obj) => {
-    // Extract text delta
-    if (
-      obj.type === 'stream_event' &&
-      obj.event?.type === 'content_block_delta' &&
-      obj.event?.delta?.type === 'text_delta'
-    ) {
-      const delta = obj.event.delta.text;
-      if (delta) {
-        fullText += delta;
-        // Only emit delta that is NOT part of an update_instructions block
-        if (onDelta) onDelta(delta);
+    if (obj.type === 'stream_event') {
+      const evt = obj.event;
+
+      // Track content block transitions (thinking → text)
+      if (evt?.type === 'content_block_start') {
+        const blockType = evt.content_block?.type;
+        if (blockType === 'thinking') {
+          isThinking = true;
+          if (callbacks.onThinkingStart) callbacks.onThinkingStart();
+        } else if (blockType === 'text') {
+          if (isThinking) {
+            isThinking = false;
+            if (callbacks.onThinkingEnd) callbacks.onThinkingEnd();
+          }
+          // Add line break between separate text blocks (e.g. before/after tool use)
+          if (hasSeenTextBlock && fullText.length > 0) {
+            fullText += '\n\n';
+            if (onDelta) onDelta('\n\n');
+          }
+          hasSeenTextBlock = true;
+        }
+      }
+
+      // Extract text delta
+      if (
+        evt?.type === 'content_block_delta' &&
+        evt?.delta?.type === 'text_delta'
+      ) {
+        const delta = evt.delta.text;
+        if (delta) {
+          fullText += delta;
+          // Only emit delta that is NOT part of an update_instructions block
+          if (onDelta) onDelta(delta);
+        }
       }
     }
     // Take full text from final result
