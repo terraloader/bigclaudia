@@ -125,6 +125,20 @@ function splitMessage(text, maxLength = 1990) {
 }
 
 /**
+ * Sends an image file as DM to the authorized user.
+ */
+async function sendImageFile(filePath) {
+  if (!ALLOWED_USER_ID) throw new Error(t.discord.userIdMissing);
+  const fs = require('fs');
+  const path = require('path');
+  const buffer = fs.readFileSync(filePath);
+  const filename = path.basename(filePath);
+  const user = await client.users.fetch(ALLOWED_USER_ID);
+  const dm = await user.createDM();
+  await dm.send({ files: [{ attachment: buffer, name: filename }] });
+}
+
+/**
  * Sends a file (Buffer) as DM to the authorized user.
  */
 async function sendFile(buffer, filename) {
@@ -151,4 +165,4 @@ async function destroy() {
   client.destroy();
 }
 
-module.exports = { start, onMessage, send, sendFile, sendToChannel, reply, keepTyping, isConfigured, destroy };
+module.exports = { start, onMessage, send, sendFile, sendImageFile, sendToChannel, reply, keepTyping, isConfigured, destroy };
