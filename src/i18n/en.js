@@ -167,6 +167,7 @@ These blocks are not shown to the user.
       CRONTAB_GRACE_MINS:      { label: 'Cron Grace Window (min)', description: 'How many minutes after the scheduled time a cron task may still be executed. Default: 30.' },
       WEB_PORT:                { label: 'Port',                 description: 'Port for the web UI. Default: 3000.' },
       WEB_HOST:                { label: 'Host',                 description: 'Bind address. 127.0.0.1 = local only, 0.0.0.0 = all interfaces.' },
+      SUPPRESS_CHANNELS_ON_FOCUS: { label: 'Suppress Channels on Focus', description: 'When enabled, messages are not forwarded to Discord/WhatsApp while the Web UI tab is focused.' },
       WHATSAPP_ENABLED:        { label: 'Enable WhatsApp',      description: 'Enable the WhatsApp integration. Requires a QR scan on first start.' },
       WHATSAPP_PHONE:          { label: 'Allowed Phone',        description: 'Phone number allowed to interact with the bot (e.g. +491234567890). Note: this is sometimes not your real number — check terminal logging after first connect.' },
       WHISPER_LOCAL_ENABLED:   { label: 'Start Local Whisper',  description: 'Automatically start the Whisper Docker container on app startup.' },

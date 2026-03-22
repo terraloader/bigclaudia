@@ -11,6 +11,12 @@ const state = require('./state');
 const t = require('./i18n');
 
 const WHISPER_LOCAL_ENABLED = (process.env.WHISPER_LOCAL_ENABLED || 'false').toLowerCase() === 'true';
+const SUPPRESS_CHANNELS_ON_FOCUS = (process.env.SUPPRESS_CHANNELS_ON_FOCUS || 'false').toLowerCase() === 'true';
+
+/** Returns true when channel output (Discord/WhatsApp) should be suppressed. */
+function shouldSuppressChannels() {
+  return SUPPRESS_CHANNELS_ON_FOCUS && state.isWebUiFocused();
+}
 
 /** Processes a chat message with streaming and returns { reply, update_instructions }. */
 async function processWithStreaming(text, via, extraOnDelta = null) {
@@ -127,8 +133,8 @@ async function processSpeakBlocks(speakBlocks, via, discordChannel = null, whats
     try {
       const audioBuffer = await elevenlabs.synthesize(text);
 
-      // Send to Discord as file attachment
-      if (discord.isConfigured()) {
+      // Send to Discord as file attachment (unless suppressed by focus)
+      if (discord.isConfigured() && !shouldSuppressChannels()) {
         try {
           if (discordChannel) {
             await discordChannel.send({ files: [{ attachment: audioBuffer, name: 'voice.mp3' }] });
@@ -140,8 +146,8 @@ async function processSpeakBlocks(speakBlocks, via, discordChannel = null, whats
         }
       }
 
-      // Send to WhatsApp as voice message
-      if (whatsapp.isConfigured()) {
+      // Send to WhatsApp as voice message (unless suppressed by focus)
+      if (whatsapp.isConfigured() && !shouldSuppressChannels()) {
         try {
           if (whatsappChat) {
             await whatsapp.sendAudio(audioBuffer, whatsappChat);
@@ -350,12 +356,12 @@ async function runHeartbeat() {
 
       // Show in web UI
       if (cleanMsg) state.addChatMessage('bot', cleanMsg, 'heartbeat');
-      // Mirror to Discord if configured
-      if (cleanMsg && discord.isConfigured()) {
+      // Mirror to Discord if configured (unless suppressed by focus)
+      if (cleanMsg && discord.isConfigured() && !shouldSuppressChannels()) {
         discord.send(cleanMsg).catch((err) => console.error(t.discord.sendError, err.message));
       }
-      // Mirror to WhatsApp if configured
-      if (cleanMsg && whatsapp.isConfigured()) {
+      // Mirror to WhatsApp if configured (unless suppressed by focus)
+      if (cleanMsg && whatsapp.isConfigured() && !shouldSuppressChannels()) {
         whatsapp.send(cleanMsg).catch((err) => console.error(t.whatsapp.sendError, err.message));
       }
       // Process TTS for heartbeat messages
@@ -507,8 +513,8 @@ async function main() {
 
     const isCmd = text.trim() === '/new' || text.trim() === '/stop' || text.trim() === '/restart';
 
-    // Forward user message to Discord immediately
-    const forwardToDiscord = !isCmd && discord.isConfigured();
+    // Forward user message to Discord immediately (unless suppressed)
+    const forwardToDiscord = !isCmd && discord.isConfigured() && !shouldSuppressChannels();
     if (forwardToDiscord) {
       try {
         await discord.send(text.split('\n').map(l => `> ${l}`).join('\n'));
@@ -517,8 +523,8 @@ async function main() {
       }
     }
 
-    // Forward user message to WhatsApp immediately
-    const forwardToWhatsapp = !isCmd && whatsapp.isConfigured();
+    // Forward user message to WhatsApp immediately (unless suppressed)
+    const forwardToWhatsapp = !isCmd && whatsapp.isConfigured() && !shouldSuppressChannels();
     if (forwardToWhatsapp) {
       try {
         await whatsapp.send(text.split('\n').map(l => `> ${l}`).join('\n'));
@@ -528,8 +534,10 @@ async function main() {
     }
 
     await enqueue(msg.id, async () => {
-      const dChunker = forwardToDiscord ? makeDiscordChunker() : null;
-      const wChunker = forwardToWhatsapp ? makeDiscordChunker((t) => whatsapp.send(t)) : null;
+      // Re-check suppression at response time (focus may have changed)
+      const suppressNow = shouldSuppressChannels();
+      const dChunker = (!suppressNow && discord.isConfigured()) ? makeDiscordChunker() : null;
+      const wChunker = (!suppressNow && whatsapp.isConfigured()) ? makeDiscordChunker((t) => whatsapp.send(t)) : null;
       const onDelta = (delta) => {
         dChunker?.onDelta(delta);
         wChunker?.onDelta(delta);

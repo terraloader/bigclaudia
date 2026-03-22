@@ -9,6 +9,8 @@ const sseClients = new Set();     // active SSE connections (http.ServerResponse
 const consoleBuffer = [];         // ring buffer for captured console output
 const MAX_CONSOLE = 500;          // max lines to keep
 
+let webUiFocused = false;         // true when at least one Web UI tab has focus
+
 const MAX_HISTORY = 20;
 
 // ─── SSE ─────────────────────────────────────────────────────────────────────
@@ -157,6 +159,11 @@ console.log = (...args) => { _origLog(...args); captureConsole('log', args); };
 console.error = (...args) => { _origError(...args); captureConsole('error', args); };
 console.warn = (...args) => { _origWarn(...args); captureConsole('warn', args); };
 
+// ─── Web UI focus tracking ──────────────────────────────────────────────────
+
+function setWebUiFocused(focused) { webUiFocused = !!focused; }
+function isWebUiFocused() { return webUiFocused; }
+
 module.exports = {
   chatLog,
   consoleBuffer,
@@ -176,4 +183,6 @@ module.exports = {
   streamToolUseEnd,
   streamRedactedThinking,
   streamEnd,
+  setWebUiFocused,
+  isWebUiFocused,
 };
