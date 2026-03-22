@@ -229,5 +229,10 @@ These blocks are not shown to the user.
     whatsappQrHint: 'Open WhatsApp → Linked Devices → Link a Device\nand scan this QR code.',
     whatsappAuthenticated: 'WhatsApp connected ✓',
     thinking: 'Thinking',
+    toolUse: 'Tool call',
+    redactedThinking: 'Redacted thinking',
+    thinkingSummary: (seconds, chars) => `Thought for ${seconds} seconds, ${chars} characters long.`,
+    toolUseSummary: (seconds, chars, name) => `Tool called${name ? ' (' + name + ')' : ''} for ${seconds} seconds, ${chars} characters long.`,
+    redactedThinkingSummary: (seconds) => `Redacted thinking for ${seconds} seconds.`,
   },
 };

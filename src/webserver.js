@@ -161,6 +161,8 @@ function getHTML(ui) {
     whatsappQrHint: ui.whatsappQrHint,
     whatsappAuthenticated: ui.whatsappAuthenticated,
     thinking: ui.thinking,
+    toolUse: ui.toolUse,
+    redactedThinking: ui.redactedThinking,
   });
 
   return `<!DOCTYPE html>
@@ -401,6 +403,72 @@ function getHTML(ui) {
   .thinking-block.streaming-thinking .thinking-summary::after {
     content: '…';
     animation: thinkingPulse 1.5s ease-in-out infinite;
+  }
+
+  /* Tool-use block (collapsible, inline in message flow) */
+  .tool-use-block {
+    margin: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.85em;
+  }
+  .tool-use-block .tool-use-summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.9em;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tool-use-block .tool-use-summary:hover { color: var(--fg); }
+  .tool-use-block .tool-use-summary .chevron {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 0.8em;
+    line-height: 1;
+  }
+  .tool-use-block:not(.collapsed) .tool-use-summary .chevron {
+    transform: rotate(90deg);
+  }
+  .tool-use-block .tool-use-content-wrapper { overflow: hidden; }
+  .tool-use-block.collapsed .tool-use-content-wrapper { max-height: 0; }
+  .tool-use-block .tool-use-content {
+    padding: 8px 12px;
+    color: var(--muted);
+    font-family: monospace;
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .tool-use-block.streaming-tool-use .tool-use-summary::after {
+    content: '…';
+    animation: thinkingPulse 1.5s ease-in-out infinite;
+  }
+
+  /* Redacted thinking block */
+  .redacted-thinking-block {
+    margin: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.85em;
+  }
+  .redacted-thinking-block .redacted-thinking-summary {
+    padding: 6px 10px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   /* Streaming shimmer on bubble background */
@@ -866,6 +934,115 @@ function toggleThinking(summaryEl) {
   }
 }
 
+// ── Tool-use block ──────────────────────────────────────────────────────────
+
+function showToolUseIndicator(id, toolName) {
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  const data = streamData[id];
+  if (!data) return;
+  const dots = bubble.querySelector('.typing-dots');
+  if (dots) dots.remove();
+  data.currentTextDiv = null;
+  data.currentTextContent = '';
+  const idx = data.thinkingCounter++;
+  data.currentThinkingIndex = idx;
+  data.thinkingBuffers[idx] = '';
+  const block = document.createElement('div');
+  block.className = 'tool-use-block streaming-tool-use';
+  block.dataset.index = idx;
+  const label = toolName ? STRINGS.toolUse + ': ' + toolName : STRINGS.toolUse;
+  block.innerHTML = '<div class="tool-use-summary" onclick="toggleToolUse(this)"><span class="chevron">›</span> <span>🔧</span> ' + label + '</div><div class="tool-use-content-wrapper"><div class="tool-use-content" id="tool-use-content-' + id + '-' + idx + '"></div></div>';
+  bubble.appendChild(block);
+}
+
+function appendToolUseChunk(id, text) {
+  const data = streamData[id];
+  if (!data) return;
+  const idx = data.currentThinkingIndex;
+  data.thinkingBuffers[idx] += text;
+  const el = document.getElementById('tool-use-content-' + id + '-' + idx);
+  if (el) {
+    el.textContent = data.thinkingBuffers[idx];
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function hideToolUseIndicator(id) {
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  const data = streamData[id];
+  if (!data) return;
+  const idx = data.currentThinkingIndex;
+  const block = bubble.querySelector('.tool-use-block[data-index="' + idx + '"]');
+  if (block) {
+    block.classList.remove('streaming-tool-use');
+    const content = data.thinkingBuffers[idx];
+    if (!content || !content.trim()) {
+      block.remove();
+    } else {
+      collapseToolUseBlock(block);
+    }
+  }
+  data.currentTextDiv = null;
+  data.currentTextContent = '';
+}
+
+function collapseToolUseBlock(block) {
+  const wrapper = block.querySelector('.tool-use-content-wrapper');
+  if (!wrapper) { block.classList.add('collapsed'); return; }
+  wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
+  wrapper.style.transition = 'max-height 0.3s ease';
+  requestAnimationFrame(() => { wrapper.style.maxHeight = '0px'; });
+  wrapper.addEventListener('transitionend', () => {
+    block.classList.add('collapsed');
+    wrapper.style.transition = '';
+    wrapper.style.maxHeight = '';
+  }, { once: true });
+}
+
+function expandToolUseBlock(block) {
+  block.classList.remove('collapsed');
+  const wrapper = block.querySelector('.tool-use-content-wrapper');
+  if (!wrapper) return;
+  const content = wrapper.querySelector('.tool-use-content');
+  wrapper.style.maxHeight = '0px';
+  wrapper.style.transition = 'max-height 0.3s ease';
+  const targetHeight = content ? content.scrollHeight : wrapper.scrollHeight;
+  requestAnimationFrame(() => { wrapper.style.maxHeight = targetHeight + 'px'; });
+  wrapper.addEventListener('transitionend', () => {
+    wrapper.style.transition = '';
+    wrapper.style.maxHeight = '';
+  }, { once: true });
+}
+
+function toggleToolUse(summaryEl) {
+  const block = summaryEl.closest('.tool-use-block');
+  if (!block) return;
+  if (block.classList.contains('collapsed')) {
+    expandToolUseBlock(block);
+  } else {
+    collapseToolUseBlock(block);
+  }
+}
+
+// ── Redacted thinking block ─────────────────────────────────────────────────
+
+function showRedactedThinking(id) {
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  const data = streamData[id];
+  if (!data) return;
+  const dots = bubble.querySelector('.typing-dots');
+  if (dots) dots.remove();
+  data.currentTextDiv = null;
+  data.currentTextContent = '';
+  const block = document.createElement('div');
+  block.className = 'redacted-thinking-block';
+  block.innerHTML = '<div class="redacted-thinking-summary"><span>🔒</span> ' + STRINGS.redactedThinking + '</div>';
+  bubble.appendChild(block);
+}
+
 function appendStreamChunk(id, text) {
   const data = streamData[id];
   if (!data) return;
@@ -930,6 +1107,21 @@ function connectSSE() {
 
     } else if (data.type === 'stream_thinking_end') {
       hideThinkingIndicator(data.id);
+
+    } else if (data.type === 'stream_tool_use_start') {
+      showToolUseIndicator(data.id, data.toolName);
+      if (chatVisible) scrollChat();
+
+    } else if (data.type === 'stream_tool_use_chunk') {
+      appendToolUseChunk(data.id, data.text);
+      if (chatVisible) scrollChat();
+
+    } else if (data.type === 'stream_tool_use_end') {
+      hideToolUseIndicator(data.id);
+
+    } else if (data.type === 'stream_redacted_thinking') {
+      showRedactedThinking(data.id);
+      if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_chunk') {
       appendStreamChunk(data.id, data.text);
