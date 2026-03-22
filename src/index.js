@@ -21,9 +21,13 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
     state.streamChunk(streamId, delta);
     if (extraOnDelta) extraOnDelta(delta);
   };
+  const callbacks = {
+    onThinkingStart: () => state.streamThinkingStart(streamId),
+    onThinkingEnd: () => state.streamThinkingEnd(streamId),
+  };
 
   const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(
-    text, state.getHistory(), fullInstructions, onDelta
+    text, state.getHistory(), fullInstructions, onDelta, callbacks
   );
 
   state.streamEnd(streamId, reply, via);

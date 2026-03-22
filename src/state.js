@@ -72,6 +72,20 @@ function streamChunk(id, text) {
 }
 
 /**
+ * Signals that thinking has started for a streaming message.
+ */
+function streamThinkingStart(id) {
+  broadcastSSE({ type: 'stream_thinking_start', id });
+}
+
+/**
+ * Signals that thinking has ended for a streaming message.
+ */
+function streamThinkingEnd(id) {
+  broadcastSSE({ type: 'stream_thinking_end', id });
+}
+
+/**
  * Finalizes a streaming message and stores it in the chat log.
  */
 function streamEnd(id, fullText, via) {
@@ -83,7 +97,7 @@ function streamEnd(id, fullText, via) {
     timestamp: new Date().toISOString(),
   };
   chatLog.push(msg);
-  broadcastSSE({ type: 'stream_end', id });
+  broadcastSSE({ type: 'stream_end', id, content: fullText });
 }
 
 // ─── Console capture ─────────────────────────────────────────────────────────
@@ -115,5 +129,7 @@ module.exports = {
   clearSession,
   streamStart,
   streamChunk,
+  streamThinkingStart,
+  streamThinkingEnd,
   streamEnd,
 };
