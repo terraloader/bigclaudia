@@ -6,6 +6,8 @@
 const conversationHistory = [];  // { role: 'user'|'assistant', content: string }
 const chatLog = [];               // { id, source: 'user'|'bot', via: 'web'|'discord', content, timestamp }
 const sseClients = new Set();     // active SSE connections (http.ServerResponse)
+const consoleBuffer = [];         // ring buffer for captured console output
+const MAX_CONSOLE = 500;          // max lines to keep
 
 const MAX_HISTORY = 20;
 
@@ -84,8 +86,27 @@ function streamEnd(id, fullText, via) {
   broadcastSSE({ type: 'stream_end', id });
 }
 
+// ─── Console capture ─────────────────────────────────────────────────────────
+
+const _origLog = console.log.bind(console);
+const _origError = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
+
+function captureConsole(level, args) {
+  const text = args.map(a => typeof a === 'string' ? a : (a instanceof Error ? a.stack || a.message : JSON.stringify(a))).join(' ');
+  const entry = { timestamp: new Date().toISOString(), level, text };
+  consoleBuffer.push(entry);
+  if (consoleBuffer.length > MAX_CONSOLE) consoleBuffer.shift();
+  broadcastSSE({ type: 'console_log', entry });
+}
+
+console.log = (...args) => { _origLog(...args); captureConsole('log', args); };
+console.error = (...args) => { _origError(...args); captureConsole('error', args); };
+console.warn = (...args) => { _origWarn(...args); captureConsole('warn', args); };
+
 module.exports = {
   chatLog,
+  consoleBuffer,
   sseClients,
   addChatMessage,
   broadcastSSE,

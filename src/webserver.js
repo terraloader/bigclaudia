@@ -90,10 +90,17 @@ async function getHeartbeatApiData() {
   const { instructions, history, raw } = await readHeartbeat();
   const fileSize = await getFileSize();
   const entries = [];
+  // Capture any preamble text before the first ### (e.g. compressed label)
+  const preambleMatch = history.match(/^([\s\S]*?)(?=\n### |$)/);
+  const preamble = preambleMatch ? preambleMatch[1].trim() : '';
   const entryRegex = /### ([^\n]+)\n([\s\S]*?)(?=\n### |$)/g;
   let match;
   while ((match = entryRegex.exec(history)) !== null) {
     entries.push({ timestamp: match[1].trim(), content: match[2].trim() });
+  }
+  // If there's preamble text (compressed label etc.), add as entry with marker timestamp
+  if (preamble) {
+    entries.push({ timestamp: '__compressed_preamble__', content: preamble });
   }
   entries.reverse();
 
@@ -147,6 +154,7 @@ function getHTML(ui) {
     settingsShutdownConfirm: ui.settingsShutdownConfirm,
     settingsShuttingDown: ui.settingsShuttingDown,
     noCrontabEntries: ui.noCrontabEntries,
+    compressedSummary: ui.compressedSummary,
     whatsappQrTitle: ui.whatsappQrTitle,
     whatsappQrHint: ui.whatsappQrHint,
     whatsappAuthenticated: ui.whatsappAuthenticated,
@@ -215,7 +223,7 @@ function getHTML(ui) {
   /* ── Dashboard ── */
   #view-dashboard { flex-direction: row; }
   aside { border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; background: var(--bg2); }
-  main { padding: 20px; overflow-y: auto; flex: 1; }
+  main { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
   .card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
   .card-title { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 5px; }
   .card-title svg { width: 13px; height: 13px; }
@@ -237,9 +245,10 @@ function getHTML(ui) {
   .meta-row .val { font-family: monospace; color: var(--accent2); }
   .instructions-body { font-size: .82rem; color: var(--muted); line-height: 1.7; }
   .instructions-body p { margin-bottom: 6px; }
-  .timeline-header { font-size: .95rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .timeline-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .timeline-header { font-size: .95rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .entry-count { background: var(--accent); color: var(--bg); font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
-  .timeline { display: flex; flex-direction: column; gap: 10px; }
+  .timeline { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; min-height: 0; }
   .entry { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; }
   .entry:hover { border-left-color: var(--accent2); }
   .entry-time { font-size: .7rem; color: var(--muted); margin-bottom: 6px; font-family: monospace; }
@@ -248,7 +257,23 @@ function getHTML(ui) {
   .entry-body p:last-child { margin-bottom: 0; }
   .entry-body strong { color: var(--accent); }
   .entry-body ul { padding-left: 14px; }
+  .compressed-block { border-left-color: var(--accent2); opacity: .75; }
+  .compressed-block .entry-time { color: var(--accent2); font-weight: 600; }
   .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+
+  /* ── Console Panel ── */
+  .console-panel { background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 12px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  [data-theme="light"] .console-panel { background: #1e1e2e; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .console-panel { background: #1e1e2e; } }
+  .console-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
+  .console-header .card-title { margin-bottom: 0; color: #8b949e; }
+
+  .console-body { overflow-y: auto; padding: 10px 14px; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .72rem; line-height: 1.7; flex: 1; }
+  .console-line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-all; }
+  .console-line .ts { color: #484f58; flex-shrink: 0; user-select: none; }
+  .console-line .txt { color: #c9d1d9; }
+  .console-line.error .txt { color: #f85149; }
+  .console-line.warn .txt { color: #d29922; }
 
   /* ── Chat ── */
   #view-chat { flex-direction: column; }
@@ -396,9 +421,17 @@ function getHTML(ui) {
     </div>
   </aside>
   <main>
-    <div class="timeline-header">${ui.executionHistory} <span class="entry-count" id="entry-count">0</span></div>
-    <div class="timeline" id="timeline">
-      <div class="empty">${ui.noEntries}</div>
+    <div class="timeline-wrapper">
+      <div class="timeline-header">${ui.executionHistory} <span class="entry-count" id="entry-count">0</span></div>
+      <div class="timeline" id="timeline">
+        <div class="empty">${ui.noEntries}</div>
+      </div>
+    </div>
+    <div class="console-panel">
+      <div class="console-header">
+        <div class="card-title" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>${ui.consoleOutput}</div>
+      </div>
+      <div class="console-body" id="console-body"></div>
     </div>
   </main>
 </div>
@@ -528,11 +561,40 @@ async function loadDashboard() {
     if (!data.entries.length) {
       timeline.innerHTML = \`<div class="empty">\${STRINGS.noEntries}</div>\`;
     } else {
-      timeline.innerHTML = data.entries.map(e => \`
+      // Separate valid-date entries from invalid-date entries (compression results)
+      const validEntries = [];
+      const compressedParts = [];
+      data.entries.forEach(e => {
+        const d = new Date(e.timestamp);
+        if (!isNaN(d.getTime())) {
+          validEntries.push(e);
+        } else {
+          // Compressed summary fragment – collect content
+          if (e.timestamp === '__compressed_preamble__') {
+            compressedParts.unshift(e.content);
+          } else {
+            compressedParts.push('### ' + e.timestamp + '\\n' + e.content);
+          }
+        }
+      });
+      // Sort valid entries chronologically: oldest first, newest at bottom
+      validEntries.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      // Build HTML: compressed block first (top), then dated entries
+      let html = '';
+      if (compressedParts.length) {
+        html += \`<div class="entry compressed-block">
+          <div class="entry-time">📦 \${STRINGS.compressedSummary || 'Compressed Summary'}</div>
+          <div class="entry-body">\${marked.parse(compressedParts.join('\\n\\n'))}</div>
+        </div>\`;
+      }
+      html += validEntries.map(e => \`
         <div class="entry">
           <div class="entry-time">🕐 \${fmtDate(e.timestamp)}</div>
           <div class="entry-body">\${marked.parse(e.content)}</div>
         </div>\`).join('');
+      timeline.innerHTML = html;
+      // Auto-scroll to bottom (newest)
+      timeline.scrollTop = timeline.scrollHeight;
     }
     document.getElementById('loading').style.opacity = '0';
     setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 300);
@@ -688,6 +750,14 @@ function connectSSE() {
       if (chatVisible) scrollChat();
       else bumpUnread();
 
+    } else if (data.type === 'console_log') {
+      appendConsoleLine(data.entry);
+
+    } else if (data.type === 'console_history') {
+      data.entries.forEach(appendConsoleLine);
+      const cb = document.getElementById('console-body');
+      if (cb) cb.scrollTop = cb.scrollHeight;
+
     } else if (data.type === 'history') {
       data.messages.forEach(renderMessage);
       scrollChat();
@@ -696,6 +766,23 @@ function connectSSE() {
     }
   };
   es.onerror = () => setTimeout(connectSSE, 3000);
+}
+
+// ── Console output ──────────────────────────────────────────────────────────
+function appendConsoleLine(entry) {
+  const container = document.getElementById('console-body');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'console-line' + (entry.level === 'error' ? ' error' : entry.level === 'warn' ? ' warn' : '');
+  const ts = new Date(entry.timestamp);
+  const timeStr = ts.toLocaleTimeString(STRINGS.locale, { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const escaped = entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  div.innerHTML = \`<span class="ts">\${timeStr}</span><span class="txt">\${escaped}</span>\`;
+  container.appendChild(div);
+  // Auto-scroll to newest entry
+  container.scrollTop = container.scrollHeight;
+  // Limit DOM nodes
+  while (container.children.length > 500) container.removeChild(container.firstChild);
 }
 
 // ── Stop ─────────────────────────────────────────────────────────────────────
@@ -916,6 +1003,8 @@ function createServer() {
 
       // Bestehende Chat-Historie sofort senden
       res.write(`data: ${JSON.stringify({ type: 'history', messages: state.chatLog })}\n\n`);
+      // Console-Buffer senden
+      res.write(`data: ${JSON.stringify({ type: 'console_history', entries: state.consoleBuffer })}\n\n`);
 
       state.sseClients.add(res);
       req.on('close', () => state.sseClients.delete(res));
