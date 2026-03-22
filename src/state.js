@@ -24,7 +24,7 @@ function broadcastSSE(data) {
 
 // ─── Chat log ─────────────────────────────────────────────────────────────────
 
-function addChatMessage(source, content, via) {
+function addChatMessage(source, content, via, images = null, documents = null) {
   const msg = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     source,   // 'user' | 'bot'
@@ -32,6 +32,8 @@ function addChatMessage(source, content, via) {
     via,      // 'web' | 'discord'
     timestamp: new Date().toISOString(),
   };
+  if (images && images.length > 0) msg.images = images; // array of absolute file paths
+  if (documents && documents.length > 0) msg.documents = documents; // array of { path, name }
   chatLog.push(msg);
   broadcastSSE({ type: 'message', msg });
   return msg;
