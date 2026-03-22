@@ -293,9 +293,7 @@ You can edit it directly or change it by chatting with BigClaudia — it will up
 
 Open `http://localhost:3000` in your browser.
 
-**Dashboard tab** — shows current instructions, crontab, heartbeat history entries, file size, and timestamps.
-
-**Chat tab** — live chat with Claude. Features:
+**Chat** — live chat with Claude. Features:
 - Token-by-token streaming with a **skeleton shimmer** animation while Claude is thinking
 - Extended **thinking blocks** displayed in a collapsible section
 - A **stop button** (red square) visible during generation
@@ -305,10 +303,21 @@ Open `http://localhost:3000` in your browser.
 - Markdown rendering via `marked.js`
 - Keyboard shortcuts: `Enter` to send, `Shift+Enter` for new line, `/new` to reset, `/stop` to stop
 
-**Settings tab** — live configuration editor:
+<p align="center"><img src="ui-chat.png" width="700" /></p>
+
+**Insights** — expanded overview of your agent's activity (formerly Dashboard):
+- Current instructions and crontab
+- Heartbeat history entries with timestamps
+- File size and status information
+
+<p align="center"><img src="ui-insights.png" width="700" /></p>
+
+**Settings** — live configuration editor:
 - Edit `.env` variables with validation and restart
 - WhatsApp QR code scanner
 - ElevenLabs voice selector
 - Console output log
+
+<p align="center"><img src="ui-settings.png" width="700" /></p>
 
 Messages are synced across all channels: messages sent via the web UI appear in Discord/WhatsApp, and vice versa.
