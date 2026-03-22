@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, ChannelType, Partials } = require('discord.js');
 const t = require('./i18n');
+const { splitMessage } = require('./utils/splitting');
 
 const ALLOWED_USER_ID = process.env.DISCORD_ALLOWED_USER_ID;
 
@@ -43,7 +44,7 @@ async function start() {
     }
   });
 
-  client.once('ready', () => {
+  client.once('clientReady', () => {
     console.log(t.discord.loggedInAs(client.user.tag));
   });
 
@@ -51,7 +52,7 @@ async function start() {
 
   // Wait until ready
   if (!client.isReady()) {
-    await new Promise((resolve) => client.once('ready', resolve));
+    await new Promise((resolve) => client.once('clientReady', resolve));
   }
 }
 
@@ -104,24 +105,9 @@ async function reply(message, text) {
  * Returns a stop function.
  */
 function keepTyping(channel) {
-  channel.sendTyping().catch(() => {});
-  const interval = setInterval(() => channel.sendTyping().catch(() => {}), 8000);
+  channel.sendTyping().catch(err => console.warn('[discord] sendTyping failed:', err.message));
+  const interval = setInterval(() => channel.sendTyping().catch(err => console.warn('[discord] sendTyping failed:', err.message)), 8000);
   return () => clearInterval(interval);
-}
-
-/**
- * Splits long text into chunks of ≤ 2000 characters.
- */
-function splitMessage(text, maxLength = 1990) {
-  const chunks = [];
-  while (text.length > maxLength) {
-    let splitAt = text.lastIndexOf('\n', maxLength);
-    if (splitAt < maxLength * 0.5) splitAt = maxLength;
-    chunks.push(text.slice(0, splitAt));
-    text = text.slice(splitAt).trimStart();
-  }
-  if (text) chunks.push(text);
-  return chunks;
 }
 
 /**
