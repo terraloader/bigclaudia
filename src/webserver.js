@@ -357,16 +357,13 @@ function getHTML(ui) {
 
   /* Thinking block (collapsible, inline in message flow) */
   .thinking-block {
-    margin: 8px 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    margin: 4px 0;
     overflow: hidden;
     font-size: 0.85em;
   }
   .thinking-block .thinking-summary {
     cursor: pointer;
-    padding: 6px 10px;
-    background: var(--bg);
+    padding: 4px 6px;
     color: var(--muted);
     font-size: 0.9em;
     user-select: none;
@@ -394,15 +391,13 @@ function getHTML(ui) {
     max-height: 0;
   }
   .thinking-block .thinking-content {
-    padding: 8px 12px;
+    padding: 4px 6px;
     color: var(--muted);
     font-style: italic;
     white-space: pre-wrap;
     word-break: break-word;
     max-height: 300px;
     overflow-y: auto;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
   }
   .thinking-block.streaming-thinking .thinking-summary::after {
     content: '…';
@@ -411,16 +406,13 @@ function getHTML(ui) {
 
   /* Tool-use block (collapsible, inline in message flow) */
   .tool-use-block {
-    margin: 8px 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    margin: 4px 0;
     overflow: hidden;
     font-size: 0.85em;
   }
   .tool-use-block .tool-use-summary {
     cursor: pointer;
-    padding: 6px 10px;
-    background: var(--bg);
+    padding: 4px 6px;
     color: var(--muted);
     font-size: 0.9em;
     user-select: none;
@@ -441,7 +433,7 @@ function getHTML(ui) {
   .tool-use-block .tool-use-content-wrapper { overflow: hidden; }
   .tool-use-block.collapsed .tool-use-content-wrapper { max-height: 0; }
   .tool-use-block .tool-use-content {
-    padding: 8px 12px;
+    padding: 4px 6px;
     color: var(--muted);
     font-family: monospace;
     font-size: 0.9em;
@@ -449,8 +441,6 @@ function getHTML(ui) {
     word-break: break-word;
     max-height: 300px;
     overflow-y: auto;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
   }
   .tool-use-block.streaming-tool-use .tool-use-summary::after {
     content: '…';
@@ -459,15 +449,12 @@ function getHTML(ui) {
 
   /* Redacted thinking block */
   .redacted-thinking-block {
-    margin: 8px 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    margin: 4px 0;
     overflow: hidden;
     font-size: 0.85em;
   }
   .redacted-thinking-block .redacted-thinking-summary {
-    padding: 6px 10px;
-    background: var(--bg);
+    padding: 4px 6px;
     color: var(--muted);
     font-size: 0.9em;
     display: flex;
@@ -1079,11 +1066,20 @@ function appendStreamChunk(id, text) {
   data.currentTextDiv.innerHTML = marked.parse(data.currentTextContent);
 }
 
-function finalizeStreamBubble(id) {
+function finalizeStreamBubble(id, cleanContent) {
   delete streamData[id];
   const bubble = document.getElementById('bubble-' + id);
   if (bubble) {
     bubble.classList.remove('streaming');
+    // Re-render with clean content (strips any custom tags that leaked during streaming)
+    if (cleanContent !== undefined) {
+      const textSegs = bubble.querySelectorAll('.text-segment');
+      if (textSegs.length) {
+        // Replace content of last text segment (or all if only one)
+        const lastSeg = textSegs[textSegs.length - 1];
+        lastSeg.innerHTML = marked.parse(cleanContent);
+      }
+    }
   }
 }
 
@@ -1203,7 +1199,7 @@ function connectSSE() {
       if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_end') {
-      finalizeStreamBubble(data.id);
+      finalizeStreamBubble(data.id, data.content);
       setWaiting(false);
       if (!chatVisible) bumpUnread();
 
@@ -1238,8 +1234,8 @@ function connectSSE() {
           <span>\${fmtTime(new Date().toISOString())}</span>
         </div>
         <div class="msg-bubble">
-          <audio controls autoplay style="width:100%;max-width:300px;"><source src="\${audioUrl}" type="audio/mpeg"></audio>
-          <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">\${data.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+          <div style="font-style:italic;color:var(--muted);margin-bottom:4px;">\${data.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+          <audio controls \${(!_suppressEnabled || document.hasFocus()) ? 'autoplay' : ''} style="width:100%;max-width:300px;"><source src="\${audioUrl}" type="audio/mpeg"></audio>
         </div>\`;
       document.getElementById('chat-messages').appendChild(div);
       if (chatVisible) scrollChat();

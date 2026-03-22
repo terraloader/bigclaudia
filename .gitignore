@@ -6,3 +6,4 @@ memory/
 .DS_Store
 .wwebjs_auth/
 .wwebjs_cache/
+todos.txt
