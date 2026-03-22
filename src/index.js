@@ -135,12 +135,18 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
     },
   };
 
-  const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(
-    messageForClaude, state.getHistory(), fullInstructions, onDelta, callbacks
-  );
+  try {
+    const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(
+      messageForClaude, state.getHistory(), fullInstructions, onDelta, callbacks
+    );
 
-  state.streamEnd(streamId, reply, via);
-  return { reply, update_instructions, update_crontab, speakBlocks };
+    state.streamEnd(streamId, reply, via);
+    return { reply, update_instructions, update_crontab, speakBlocks };
+  } catch (err) {
+    // Ensure stream_end is always sent (e.g. when /stop kills the process)
+    state.streamEnd(streamId, '', via);
+    throw err;
+  }
 }
 
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MINS || '30', 10) * 60 * 1000;
@@ -322,7 +328,7 @@ async function handleDiscordMessage(message) {
     (a) => a.contentType?.startsWith('image/') || IMAGE_EXTS.test(a.name || '')
   );
   const imagePaths = [];
-  for (const att of imageAttachments) {
+  for (const att of imageAttachments.values()) {
     try {
       const savedPath = await downloadAndSave(att.url, att.name || 'image.png');
       imagePaths.push(savedPath);
@@ -338,7 +344,7 @@ async function handleDiscordMessage(message) {
            !a.contentType?.startsWith('image/') && !IMAGE_EXTS.test(a.name || '')
   );
   const documentPaths = [];
-  for (const att of docAttachments) {
+  for (const att of docAttachments.values()) {
     try {
       const savedPath = await downloadAndSave(att.url, att.name || 'document');
       documentPaths.push({ path: savedPath, name: att.name || 'document' });
