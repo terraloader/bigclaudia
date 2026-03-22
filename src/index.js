@@ -23,6 +23,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   };
   const callbacks = {
     onThinkingStart: () => state.streamThinkingStart(streamId),
+    onThinkingDelta: (delta) => state.streamThinkingChunk(streamId, delta),
     onThinkingEnd: () => state.streamThinkingEnd(streamId),
   };
 

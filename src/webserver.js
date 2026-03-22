@@ -158,6 +158,7 @@ function getHTML(ui) {
     whatsappQrTitle: ui.whatsappQrTitle,
     whatsappQrHint: ui.whatsappQrHint,
     whatsappAuthenticated: ui.whatsappAuthenticated,
+    thinking: ui.thinking,
   });
 
   return `<!DOCTYPE html>
@@ -345,6 +346,60 @@ function getHTML(ui) {
     animation: thinkingPulse 2s ease-in-out infinite;
   }
   .thinking-indicator .brain { font-size: 1.1em; }
+
+  /* Thinking block (collapsible, inline in message flow) */
+  .thinking-block {
+    margin: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.85em;
+  }
+  .thinking-block .thinking-summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.9em;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .thinking-block .thinking-summary:hover {
+    color: var(--fg);
+  }
+  .thinking-block .thinking-summary .chevron {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 0.8em;
+    line-height: 1;
+  }
+  .thinking-block:not(.collapsed) .thinking-summary .chevron {
+    transform: rotate(90deg);
+  }
+  .thinking-block .thinking-summary .brain { font-size: 1.1em; }
+  .thinking-block .thinking-content-wrapper {
+    overflow: hidden;
+  }
+  .thinking-block.collapsed .thinking-content-wrapper {
+    max-height: 0;
+  }
+  .thinking-block .thinking-content {
+    padding: 8px 12px;
+    color: var(--muted);
+    font-style: italic;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .thinking-block.streaming-thinking .thinking-summary::after {
+    content: '…';
+    animation: thinkingPulse 1.5s ease-in-out infinite;
+  }
 
   /* Streaming shimmer on bubble background */
   @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
@@ -680,13 +735,19 @@ function bumpUnread() {
 }
 
 // ── Streaming-Bubble ────────────────────────────────────────────────────────
-// Accumulated raw text per active stream ID (for markdown re-rendering)
-const streamBuffers = {};
+// Per-stream state for inline thinking blocks
+const streamData = {};
 
 function createStreamBubble(id, via) {
   const el = document.getElementById('chat-empty');
   if (el) el.remove();
-  streamBuffers[id] = '';
+  streamData[id] = {
+    thinkingCounter: 0,
+    currentTextDiv: null,
+    currentTextContent: '',
+    currentThinkingIndex: -1,
+    thinkingBuffers: {}
+  };
 
   const viaClass = via === 'discord' ? 'via-discord' : via === 'whatsapp' ? 'via-whatsapp' : 'via-web';
   const viaLabel = via === 'discord' ? 'Discord' : via === 'whatsapp' ? 'WhatsApp' : 'Web';
@@ -706,41 +767,125 @@ function createStreamBubble(id, via) {
 function showThinkingIndicator(id) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
-  // Replace typing dots with thinking indicator
+  const data = streamData[id];
+  if (!data) return;
+  // Remove typing dots
   const dots = bubble.querySelector('.typing-dots');
   if (dots) dots.remove();
-  // Only add if not already present
-  if (!bubble.querySelector('.thinking-indicator')) {
-    const indicator = document.createElement('span');
-    indicator.className = 'thinking-indicator';
-    indicator.innerHTML = '<span class="brain">🧠</span> Thinking\u2026';
-    bubble.appendChild(indicator);
+  // Close current text segment (next text will create a new one after this thinking block)
+  data.currentTextDiv = null;
+  data.currentTextContent = '';
+  // Create new thinking block with unique index
+  const idx = data.thinkingCounter++;
+  data.currentThinkingIndex = idx;
+  data.thinkingBuffers[idx] = '';
+  const block = document.createElement('div');
+  block.className = 'thinking-block streaming-thinking';
+  block.dataset.index = idx;
+  block.innerHTML = '<div class="thinking-summary" onclick="toggleThinking(this)"><span class="chevron">›</span> <span class="brain">🧠</span> ' + STRINGS.thinking + '</div><div class="thinking-content-wrapper"><div class="thinking-content" id="thinking-content-' + id + '-' + idx + '"></div></div>';
+  bubble.appendChild(block);
+}
+
+function appendThinkingChunk(id, text) {
+  const data = streamData[id];
+  if (!data) return;
+  const idx = data.currentThinkingIndex;
+  data.thinkingBuffers[idx] += text;
+  const el = document.getElementById('thinking-content-' + id + '-' + idx);
+  if (el) {
+    el.textContent = data.thinkingBuffers[idx];
+    el.scrollTop = el.scrollHeight;
   }
 }
 
 function hideThinkingIndicator(id) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
-  const indicator = bubble.querySelector('.thinking-indicator');
-  if (indicator) indicator.remove();
+  const data = streamData[id];
+  if (!data) return;
+  const idx = data.currentThinkingIndex;
+  const block = bubble.querySelector('.thinking-block[data-index="' + idx + '"]');
+  if (block) {
+    block.classList.remove('streaming-thinking');
+    const content = data.thinkingBuffers[idx];
+    if (!content || !content.trim()) {
+      block.remove();
+    } else {
+      // Collapse with smooth animation
+      collapseThinkingBlock(block);
+    }
+  }
+  // Reset text segment so next text creates a new div after this thinking block
+  data.currentTextDiv = null;
+  data.currentTextContent = '';
 }
 
-function appendStreamChunk(id, text) {
-  if (streamBuffers[id] === undefined) return;
-  streamBuffers[id] += text;
-  const bubble = document.getElementById('bubble-' + id);
-  if (bubble) {
-    // Remove typing dots and thinking indicator once real content arrives
-    const dots = bubble.querySelector('.typing-dots');
-    if (dots) dots.remove();
-    const thinking = bubble.querySelector('.thinking-indicator');
-    if (thinking) thinking.remove();
-    bubble.innerHTML = marked.parse(streamBuffers[id]);
+function collapseThinkingBlock(block) {
+  const wrapper = block.querySelector('.thinking-content-wrapper');
+  if (!wrapper) { block.classList.add('collapsed'); return; }
+  // Set explicit height so transition can animate from it
+  wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
+  wrapper.style.transition = 'max-height 0.3s ease';
+  requestAnimationFrame(() => {
+    wrapper.style.maxHeight = '0px';
+  });
+  wrapper.addEventListener('transitionend', () => {
+    block.classList.add('collapsed');
+    wrapper.style.transition = '';
+    wrapper.style.maxHeight = '';
+  }, { once: true });
+}
+
+function expandThinkingBlock(block) {
+  block.classList.remove('collapsed');
+  const wrapper = block.querySelector('.thinking-content-wrapper');
+  if (!wrapper) return;
+  const content = wrapper.querySelector('.thinking-content');
+  // Temporarily make visible to measure
+  wrapper.style.maxHeight = '0px';
+  wrapper.style.transition = 'max-height 0.3s ease';
+  const targetHeight = content ? content.scrollHeight : wrapper.scrollHeight;
+  requestAnimationFrame(() => {
+    wrapper.style.maxHeight = targetHeight + 'px';
+  });
+  wrapper.addEventListener('transitionend', () => {
+    wrapper.style.transition = '';
+    wrapper.style.maxHeight = '';
+  }, { once: true });
+}
+
+function toggleThinking(summaryEl) {
+  const block = summaryEl.closest('.thinking-block');
+  if (!block) return;
+  if (block.classList.contains('collapsed')) {
+    expandThinkingBlock(block);
+  } else {
+    collapseThinkingBlock(block);
   }
 }
 
+function appendStreamChunk(id, text) {
+  const data = streamData[id];
+  if (!data) return;
+  const bubble = document.getElementById('bubble-' + id);
+  if (!bubble) return;
+  // Remove typing dots once real content arrives
+  const dots = bubble.querySelector('.typing-dots');
+  if (dots) dots.remove();
+  // Create a new text segment div if needed
+  if (!data.currentTextDiv) {
+    const div = document.createElement('div');
+    div.className = 'text-segment';
+    bubble.appendChild(div);
+    data.currentTextDiv = div;
+    data.currentTextContent = '';
+  }
+  data.currentTextContent += text;
+  data.currentTextDiv.innerHTML = marked.parse(data.currentTextContent);
+}
+
 function finalizeStreamBubble(id) {
-  delete streamBuffers[id];
+  delete streamData[id];
   const bubble = document.getElementById('bubble-' + id);
   if (bubble) {
     bubble.classList.remove('streaming');
@@ -775,6 +920,10 @@ function connectSSE() {
 
     } else if (data.type === 'stream_thinking_start') {
       showThinkingIndicator(data.id);
+      if (chatVisible) scrollChat();
+
+    } else if (data.type === 'stream_thinking_chunk') {
+      appendThinkingChunk(data.id, data.text);
       if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_thinking_end') {

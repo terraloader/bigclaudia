@@ -227,5 +227,6 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     whatsappQrTitle: 'Mit WhatsApp scannen',
     whatsappQrHint: 'WhatsApp öffnen → Verknüpfte Geräte → Gerät verknüpfen\nund diesen QR-Code scannen.',
     whatsappAuthenticated: 'WhatsApp verbunden ✓',
+    thinking: 'Denkt nach',
   },
 };
