@@ -26,6 +26,7 @@ Deine Aufgaben stehen in den Anweisungen. Führe sie aus und gib strukturiert zu
 Regeln:
 - Schreibe auf Deutsch, außer wenn anders angewiesen
 - Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
+- Um eine Sprachnachricht zu senden, füge einen <speak>Text</speak>-Block in die Nachricht ein. Der Text darin wird über ElevenLabs in Sprache umgewandelt und als Audio-Nachricht zusammen mit dem Text gesendet.
 
 ## Crontab-Ausführungsregeln
 Wenn ein ## Crontab-Abschnitt vorhanden ist, verarbeite jeden Eintrag wie folgt:
@@ -95,7 +96,18 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
 
 ## Crontab / Zeitplanung
 - Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er geplante Aufgaben für den Heartbeat-Agenten – verwende den <update_crontab>-Block.
-- Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).`,
+- Nur wenn der Nutzer explizit "system-cron" oder "system-crontab" sagt, meint er etwas außerhalb des Heartbeats (z.B. den Cron-Daemon des Betriebssystems).
+
+## Sprachausgabe (Text-to-Speech)
+- Wenn ElevenLabs aktiviert ist und du eine Sprachnachricht senden möchtest, verpacke den gesprochenen Text in einen <speak>-Tag:
+
+<speak>Hallo! Dieser Text wird in Sprache umgewandelt und als Sprachnachricht verschickt.</speak>
+
+- Der <speak>-Block wird dem Nutzer NICHT als Text angezeigt – er dient nur zur Audio-Erzeugung.
+- Du kannst mehrere <speak>-Blöcke in einer Antwort verwenden für separate Sprachnachrichten.
+- Nutze <speak>, wenn der Nutzer Sprachausgabe wünscht, oder wenn eine Sprachnachricht natürlich wirkt (z.B. Begrüßungen, kurze Ankündigungen, emotionale Nachrichten).
+- Halte gesprochenen Text kurz und natürlich – schreibe ihn so, wie man ihn sprechen würde.
+- Nutze <speak> NICHT für lange oder komplexe Antworten – nur für kurze, gesprochene Nachrichten.`,
   },
   whatsapp: {
     qrReady: '[WhatsApp] QR-Code bereit – mit WhatsApp-Handy scannen.',
@@ -109,6 +121,29 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     sendError: '[WhatsApp] Sendefehler:',
     mirrorFailed: '[WhatsApp] Spiegeln fehlgeschlagen:',
   },
+  whisper: {
+    sending: (file, bytes) => `[Whisper] Sende ${file} (${bytes} Bytes) zur Transkription...`,
+    httpError: (status, body) => `Whisper-API HTTP ${status}: ${body}`,
+    emptyResult: 'Whisper hat keinen Text erkannt.',
+    success: (text) => `[Whisper] Transkribiert: ${text}`,
+    transcribing: '[Discord] Sprachnachricht erkannt – transkribiere...',
+    transcribeError: (msg) => `Sprachnachricht konnte nicht transkribiert werden: ${msg}`,
+    alreadyRunning: '[Whisper] Lokaler Container läuft bereits.',
+    starting: (port) => `[Whisper] Starte lokalen Docker-Container auf Port ${port}...`,
+    started: '[Whisper] Lokaler Container gestartet.',
+    stopped: '[Whisper] Lokaler Container gestoppt.',
+    startError: (msg) => `[Whisper] Lokaler Container konnte nicht gestartet werden: ${msg}`,
+  },
+  elevenlabs: {
+    noApiKey: 'ELEVENLABS_API_KEY nicht gesetzt.',
+    httpError: (status, body) => `ElevenLabs-API HTTP ${status}: ${body}`,
+    voicesLoaded: (n) => `[ElevenLabs] ${n} Stimmen geladen.`,
+    noVoices: 'Keine ElevenLabs-Stimmen verfügbar.',
+    synthesizing: (text, voice) => `[ElevenLabs] Synthetisiere "${text}…" mit Stimme ${voice}`,
+    synthesized: (bytes) => `[ElevenLabs] Audio generiert: ${bytes} Bytes`,
+    sendError: (msg) => `[ElevenLabs] Sendefehler: ${msg}`,
+    speakError: (msg) => `[ElevenLabs] TTS-Fehler: ${msg}`,
+  },
   settings: {
     groups: {
       general:   'Allgemein',
@@ -116,7 +151,9 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
       discord:   'Discord',
       heartbeat: 'Heartbeat',
       webServer: 'Webserver',
-      whatsapp:  'WhatsApp',
+      whisper:   'Whisper (Sprache-zu-Text)',
+      whatsapp:   'WhatsApp',
+      elevenlabs: 'ElevenLabs (Text-zu-Sprache)',
     },
     fields: {
       LANGUAGE:                { label: 'Sprache',                  description: 'Sprache für UI und Logs.' },
@@ -132,7 +169,12 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
       WEB_HOST:                { label: 'Host',                     description: 'Bind-Adresse. 127.0.0.1 = nur lokal, 0.0.0.0 = alle Schnittstellen.' },
       WHATSAPP_ENABLED:        { label: 'WhatsApp aktivieren',      description: 'WhatsApp-Integration aktivieren. Beim ersten Start ist ein QR-Scan erforderlich.' },
       WHATSAPP_PHONE:          { label: 'Erlaubte Nummer',          description: 'Telefonnummer, die mit dem Bot interagieren darf (z.B. +491234567890). Hinweis: Dies ist manchmal nicht die eigene Nummer – bitte Terminal-Logs nach dem ersten Verbinden prüfen.' },
+      WHISPER_LOCAL_ENABLED:   { label: 'Lokales Whisper starten',    description: 'Whisper-Docker-Container beim App-Start automatisch starten.' },
+      WHISPER_URL:             { label: 'Whisper-URL',               description: 'URL der lokalen Whisper-ASR-API. Standard: http://localhost:9000' },
       WHATSAPP_SEND_PHONE:     { label: 'Sende-Nummer',             description: 'Nummer, an die Heartbeat- und Web-UI-Nachrichten gesendet werden. Wenn nicht gesetzt, wird die erlaubte Nummer verwendet.' },
+      ELEVENLABS_ENABLED:      { label: 'ElevenLabs aktivieren',    description: 'Text-zu-Sprache-Ausgabe über ElevenLabs aktivieren oder deaktivieren.' },
+      ELEVENLABS_API_KEY:      { label: 'API-Key',                  description: 'ElevenLabs API-Key aus dem ElevenLabs Dashboard.' },
+      ELEVENLABS_VOICE:        { label: 'Stimme',                   description: 'Sprache und Stimme für die Text-zu-Sprache-Ausgabe auswählen.' },
     },
   },
   web: {

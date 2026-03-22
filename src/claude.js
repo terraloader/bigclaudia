@@ -108,17 +108,28 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
     }
   });
 
-  // Parse update_instructions and update_crontab blocks, remove both from reply
+  // Parse update_instructions, update_crontab, and speak blocks; remove all from reply
   const updateInstrMatch = fullText.match(/<update_instructions>([\s\S]*?)<\/update_instructions>/);
   const updateCrontabMatch = fullText.match(/<update_crontab>([\s\S]*?)<\/update_crontab>/);
   const update_instructions = updateInstrMatch ? updateInstrMatch[1].trim() : '';
   const update_crontab = updateCrontabMatch ? updateCrontabMatch[1].trim() : null;
+
+  // Extract all <speak>...</speak> blocks
+  const speakBlocks = [];
+  const speakRegex = /<speak>([\s\S]*?)<\/speak>/g;
+  let speakMatch;
+  while ((speakMatch = speakRegex.exec(fullText)) !== null) {
+    const text = speakMatch[1].trim();
+    if (text) speakBlocks.push(text);
+  }
+
   const reply = fullText
     .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/, '')
     .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/, '')
+    .replace(/<speak>[\s\S]*?<\/speak>/g, '')
     .trim();
 
-  return { reply, update_instructions, update_crontab };
+  return { reply, update_instructions, update_crontab, speakBlocks };
 }
 
 // ─── Summarization ────────────────────────────────────────────────────────────

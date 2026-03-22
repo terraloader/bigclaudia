@@ -4,9 +4,13 @@ const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateIns
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
 const discord = require('./discord');
 const whatsapp = require('./whatsapp');
+const elevenlabs = require('./elevenlabs');
+const { transcribe } = require('./whisper');
 const { createServer, recordHeartbeatRun, setMessageProcessor, restartSelf } = require('./webserver');
 const state = require('./state');
 const t = require('./i18n');
+
+const WHISPER_LOCAL_ENABLED = (process.env.WHISPER_LOCAL_ENABLED || 'false').toLowerCase() === 'true';
 
 /** Processes a chat message with streaming and returns { reply, update_instructions }. */
 async function processWithStreaming(text, via, extraOnDelta = null) {
@@ -18,12 +22,12 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
     if (extraOnDelta) extraOnDelta(delta);
   };
 
-  const { reply, update_instructions, update_crontab } = await chatWithClaude(
+  const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(
     text, state.getHistory(), fullInstructions, onDelta
   );
 
   state.streamEnd(streamId, reply, via);
-  return { reply, update_instructions, update_crontab };
+  return { reply, update_instructions, update_crontab, speakBlocks };
 }
 
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MINS || '30', 10) * 60 * 1000;
@@ -66,10 +70,60 @@ async function enqueue(msgId, handler) {
   }
 }
 
+// ─── ElevenLabs TTS helper ───────────────────────────────────────────────────
+// Synthesizes speak blocks and sends audio to all channels.
+
+async function processSpeakBlocks(speakBlocks, via, discordChannel = null, whatsappChat = null) {
+  if (!speakBlocks || !speakBlocks.length || !elevenlabs.isConfigured()) return;
+
+  for (const text of speakBlocks) {
+    try {
+      const audioBuffer = await elevenlabs.synthesize(text);
+
+      // Send to Discord as file attachment
+      if (discord.isConfigured()) {
+        try {
+          if (discordChannel) {
+            await discordChannel.send({ files: [{ attachment: audioBuffer, name: 'voice.mp3' }] });
+          } else {
+            await discord.sendFile(audioBuffer, 'voice.mp3');
+          }
+        } catch (err) {
+          console.error(t.elevenlabs.sendError(err.message));
+        }
+      }
+
+      // Send to WhatsApp as voice message
+      if (whatsapp.isConfigured()) {
+        try {
+          if (whatsappChat) {
+            await whatsapp.sendAudio(audioBuffer, whatsappChat);
+          } else {
+            await whatsapp.sendAudio(audioBuffer);
+          }
+        } catch (err) {
+          console.error(t.elevenlabs.sendError(err.message));
+        }
+      }
+
+      // Broadcast audio to Web UI via SSE (base64 encoded)
+      state.broadcastSSE({
+        type: 'audio',
+        audio: audioBuffer.toString('base64'),
+        text,
+        via,
+      });
+
+    } catch (err) {
+      console.error(t.elevenlabs.speakError(err.message));
+    }
+  }
+}
+
 // ─── Shared message processor ────────────────────────────────────────────────
 // Used by both the Discord handler and the Web UI chat.
 
-async function processMessage(text, via, extraOnDelta = null) {
+async function processMessage(text, via, extraOnDelta = null, context = {}) {
   if (text.trim() === '/new') {
     killCurrentProcess();
     messageQueue.length = 0;
@@ -84,7 +138,7 @@ async function processMessage(text, via, extraOnDelta = null) {
     return { reply: t.chat.restarting };
   }
 
-  const { reply, update_instructions, update_crontab } = await processWithStreaming(text, via, extraOnDelta);
+  const { reply, update_instructions, update_crontab, speakBlocks } = await processWithStreaming(text, via, extraOnDelta);
 
   if (update_instructions && update_instructions.trim()) {
     await updateInstructions(update_instructions.trim());
@@ -93,6 +147,12 @@ async function processMessage(text, via, extraOnDelta = null) {
   if (update_crontab !== null && update_crontab !== undefined) {
     await updateCrontab(update_crontab);
     console.log(t.heartbeat.instructionsUpdated(via + '/crontab'));
+  }
+
+  // Process TTS speak blocks (async, don't block the response)
+  if (speakBlocks && speakBlocks.length) {
+    processSpeakBlocks(speakBlocks, via, context.discordChannel, context.whatsappChat)
+      .catch((err) => console.error(t.elevenlabs.speakError(err.message)));
   }
 
   state.pushHistory('user', text);
@@ -104,9 +164,33 @@ async function processMessage(text, via, extraOnDelta = null) {
 // ─── Discord message handler ──────────────────────────────────────────────────
 
 async function handleDiscordMessage(message) {
-  const text = message.content
+  let text = message.content
     .replace(/<@!?\d+>/g, '')
     .trim();
+
+  // ── Voice message handling ──────────────────────────────────────────────────
+  const voiceAttachment = message.attachments.find(
+    (a) => a.contentType?.startsWith('audio/') || a.name?.endsWith('.ogg')
+  );
+
+  if (voiceAttachment) {
+    console.log(t.whisper.transcribing);
+    try {
+      const res = await fetch(voiceAttachment.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const transcribed = await transcribe(buf, voiceAttachment.name || 'voice.ogg', process.env.WHISPER_LANGUAGE || null);
+      // Prepend transcription as a quote; keep any existing text below
+      const quote = transcribed.split('\n').map((l) => `> ${l}`).join('\n');
+      text = text
+        ? `${quote}\n\n${text}`
+        : quote;
+    } catch (err) {
+      console.error(t.whisper.transcribeError(err.message));
+      await message.channel.send(t.whisper.transcribeError(err.message));
+      return;
+    }
+  }
 
   if (!text) return;
 
@@ -118,7 +202,7 @@ async function handleDiscordMessage(message) {
     const stopTyping = discord.keepTyping(message.channel);
     const chunker = makeDiscordChunker((text) => discord.sendToChannel(message.channel, text));
     try {
-      await processMessage(text, 'discord', chunker.onDelta);
+      await processMessage(text, 'discord', chunker.onDelta, { discordChannel: message.channel });
     } catch (err) {
       console.error(t.discord.error, err.message);
       const errMsg = t.chat.error(err.message);
@@ -146,7 +230,7 @@ async function handleWhatsappMessage(message) {
     const stopTyping = whatsapp.keepTyping(chat);
     const chunker = makeDiscordChunker((chunk) => whatsapp.sendToChat(chat, chunk));
     try {
-      await processMessage(text, 'whatsapp', chunker.onDelta);
+      await processMessage(text, 'whatsapp', chunker.onDelta, { whatsappChat: chat });
     } catch (err) {
       console.error(t.whatsapp.error, err.message);
       const errMsg = t.chat.error(err.message);
@@ -180,15 +264,30 @@ async function runHeartbeat() {
     console.log(t.heartbeat.claudeDone, summary.substring(0, 150));
 
     for (const msg of discord_messages) {
+      // Extract <speak> blocks from heartbeat messages
+      const speakRegex = /<speak>([\s\S]*?)<\/speak>/g;
+      const heartbeatSpeakBlocks = [];
+      let sm;
+      while ((sm = speakRegex.exec(msg)) !== null) {
+        const txt = sm[1].trim();
+        if (txt) heartbeatSpeakBlocks.push(txt);
+      }
+      const cleanMsg = msg.replace(/<speak>[\s\S]*?<\/speak>/g, '').trim();
+
       // Show in web UI
-      state.addChatMessage('bot', msg, 'heartbeat');
+      if (cleanMsg) state.addChatMessage('bot', cleanMsg, 'heartbeat');
       // Mirror to Discord if configured
-      if (discord.isConfigured()) {
-        discord.send(msg).catch((err) => console.error(t.discord.sendError, err.message));
+      if (cleanMsg && discord.isConfigured()) {
+        discord.send(cleanMsg).catch((err) => console.error(t.discord.sendError, err.message));
       }
       // Mirror to WhatsApp if configured
-      if (whatsapp.isConfigured()) {
-        whatsapp.send(msg).catch((err) => console.error(t.whatsapp.sendError, err.message));
+      if (cleanMsg && whatsapp.isConfigured()) {
+        whatsapp.send(cleanMsg).catch((err) => console.error(t.whatsapp.sendError, err.message));
+      }
+      // Process TTS for heartbeat messages
+      if (heartbeatSpeakBlocks.length) {
+        processSpeakBlocks(heartbeatSpeakBlocks, 'heartbeat')
+          .catch((err) => console.error(t.elevenlabs.speakError(err.message)));
       }
     }
 
@@ -247,11 +346,74 @@ function makeDiscordChunker(sendFn = (text) => discord.send(text)) {
   return { onDelta, flush };
 }
 
+// ─── Whisper local Docker container ──────────────────────────────────────────
+
+const WHISPER_CONTAINER_NAME = 'bigclaudia-whisper';
+
+async function startWhisperLocal() {
+  const { execSync, spawn: sp } = require('child_process');
+
+  // Check if already running
+  try {
+    const running = execSync(
+      `docker inspect -f '{{.State.Running}}' ${WHISPER_CONTAINER_NAME} 2>/dev/null`,
+      { encoding: 'utf8' }
+    ).trim();
+    if (running === 'true') {
+      console.log(t.whisper.alreadyRunning);
+      return;
+    }
+    // Container exists but is stopped – remove it first
+    execSync(`docker rm -f ${WHISPER_CONTAINER_NAME}`, { stdio: 'ignore' });
+  } catch {
+    // Container doesn't exist – that's fine
+  }
+
+  const whisperUrl = process.env.WHISPER_URL || 'http://localhost:9000';
+  const port = new URL(whisperUrl).port || '9000';
+
+  console.log(t.whisper.starting(port));
+  const proc = sp('docker', [
+    'run', '-d',
+    '--name', WHISPER_CONTAINER_NAME,
+    '-p', `${port}:9000`,
+    '-e', 'ASR_MODEL=base',
+    '-e', 'ASR_ENGINE=faster_whisper',
+    'onerahmet/openai-whisper-asr-webservice',
+  ], { stdio: 'ignore' });
+
+  await new Promise((resolve, reject) => {
+    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker run exited with code ${code}`)));
+    proc.on('error', reject);
+  });
+  console.log(t.whisper.started);
+}
+
+async function stopWhisperLocal() {
+  try {
+    const { execSync } = require('child_process');
+    execSync(`docker stop ${WHISPER_CONTAINER_NAME}`, { stdio: 'ignore' });
+    execSync(`docker rm ${WHISPER_CONTAINER_NAME}`, { stdio: 'ignore' });
+    console.log(t.whisper.stopped);
+  } catch {
+    // Container may not exist
+  }
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log(t.bot.starting);
   console.log(t.bot.heartbeatInterval(HEARTBEAT_INTERVAL_MS / 1000 / 60));
+
+  // Start local Whisper container if enabled
+  if (WHISPER_LOCAL_ENABLED) {
+    try {
+      await startWhisperLocal();
+    } catch (err) {
+      console.error(t.whisper.startError(err.message));
+    }
+  }
 
   const created = await initHeartbeat();
   if (created) console.log(t.bot.heartbeatCreated);
@@ -320,6 +482,7 @@ async function main() {
 // Graceful shutdown
 async function shutdown() {
   console.log(t.bot.stopping);
+  if (WHISPER_LOCAL_ENABLED) await stopWhisperLocal();
   await discord.destroy();
   process.exit(0);
 }

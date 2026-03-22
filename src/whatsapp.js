@@ -95,6 +95,25 @@ async function sendToChat(chat, text) {
 }
 
 /**
+ * Sends an audio buffer as a voice message.
+ * If chat is provided, sends to that chat; otherwise sends to the configured phone.
+ */
+async function sendAudio(audioBuffer, chat = null) {
+  if (!client || !authenticated) throw new Error(t.whatsapp.notReady);
+  const { MessageMedia } = require('whatsapp-web.js');
+  const media = new MessageMedia('audio/mpeg', audioBuffer.toString('base64'), 'voice.mp3');
+
+  if (chat) {
+    await chat.sendMessage(media, { sendAudioAsVoice: true });
+  } else {
+    const phone = (SEND_PHONE || ALLOWED_PHONE || '').replace(/^\+/, '');
+    if (!phone) throw new Error(t.whatsapp.phoneMissing);
+    const chatId = phone + '@c.us';
+    await client.sendMessage(chatId, media, { sendAudioAsVoice: true });
+  }
+}
+
+/**
  * Continuously refreshes the typing indicator every 8 s until stopped.
  * Returns a stop function.
  */
@@ -142,4 +161,4 @@ async function destroy() {
   }
 }
 
-module.exports = { start, onMessage, send, sendToChat, keepTyping, getQR, isConfigured, destroy };
+module.exports = { start, onMessage, send, sendAudio, sendToChat, keepTyping, getQR, isConfigured, destroy };

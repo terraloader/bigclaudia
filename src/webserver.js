@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { readHeartbeat, getFileSize, MAX_SIZE } = require('./memory');
 const whatsapp = require('./whatsapp');
+const elevenlabs = require('./elevenlabs');
 const { killCurrentProcess } = require('./claude');
 const state = require('./state');
 const t = require('./i18n');
@@ -22,9 +23,15 @@ const SETTINGS_DEFS = [
   { group: 'heartbeat',  key: 'CRONTAB_GRACE_MINS',      type: 'number',   placeholder: '30' },
   { group: 'webServer',  key: 'WEB_PORT',                type: 'number',   placeholder: '3000' },
   { group: 'webServer',  key: 'WEB_HOST',                type: 'text',     placeholder: '127.0.0.1' },
+  { group: 'whisper',    key: 'WHISPER_LOCAL_ENABLED',     type: 'select', options: ['true', 'false'], placeholder: 'false' },
+  { group: 'whisper',    key: 'WHISPER_URL',              type: 'text',     placeholder: 'http://localhost:9000' },
+  { group: 'whisper',    key: 'WHISPER_LANGUAGE',         type: 'text',     placeholder: 'de' },
   { group: 'whatsapp',   key: 'WHATSAPP_ENABLED',        type: 'select', options: ['true', 'false'], placeholder: 'false' },
   { group: 'whatsapp',   key: 'WHATSAPP_PHONE',          type: 'text',     placeholder: '+491234567890' },
   { group: 'whatsapp',   key: 'WHATSAPP_SEND_PHONE',     type: 'text',     placeholder: '+491234567890' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_ENABLED',      type: 'select', options: ['true', 'false'], placeholder: 'false' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_API_KEY',      type: 'password', placeholder: '' },
+  { group: 'elevenlabs', key: 'ELEVENLABS_VOICE',        type: 'voice-select', placeholder: '' },
 ];
 
 async function readEnvFile() {
@@ -652,6 +659,35 @@ function connectSSE() {
       if (chatVisible) scrollChat();
       else if (data.msg.source === 'bot') bumpUnread();
 
+    } else if (data.type === 'audio') {
+      // Play audio in the Web UI
+      const audioBlob = new Blob(
+        [Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))],
+        { type: 'audio/mpeg' }
+      );
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      // Create audio message bubble
+      const el = document.getElementById('chat-empty');
+      if (el) el.remove();
+      const div = document.createElement('div');
+      div.className = 'msg bot';
+      const viaClass = data.via === 'discord' ? 'via-discord' : data.via === 'whatsapp' ? 'via-whatsapp' : data.via === 'heartbeat' ? 'via-heartbeat' : 'via-web';
+      const viaLabel = data.via === 'discord' ? 'Discord' : data.via === 'whatsapp' ? 'WhatsApp' : data.via === 'heartbeat' ? 'Heartbeat' : 'Web';
+      div.innerHTML = \`
+        <div class="msg-meta">
+          <span class="via-badge \${viaClass}">\${viaLabel}</span>
+          <span>🔊</span>
+          <span>\${fmtTime(new Date().toISOString())}</span>
+        </div>
+        <div class="msg-bubble">
+          <audio controls autoplay style="width:100%;max-width:300px;"><source src="\${audioUrl}" type="audio/mpeg"></audio>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">\${data.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>\`;
+      document.getElementById('chat-messages').appendChild(div);
+      if (chatVisible) scrollChat();
+      else bumpUnread();
+
     } else if (data.type === 'history') {
       data.messages.forEach(renderMessage);
       scrollChat();
@@ -719,7 +755,10 @@ document.getElementById('stop-btn').addEventListener('click', stopChat);
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const { defs, values } = await fetch('/api/settings').then(r => r.json());
+  const [{ defs, values }, voiceData] = await Promise.all([
+    fetch('/api/settings').then(r => r.json()),
+    fetch('/api/elevenlabs/voices').then(r => r.json()).catch(() => ({ voices: [], selected: '' })),
+  ]);
   const groups = {};
   for (const d of defs) { if (!groups[d.group]) groups[d.group] = []; groups[d.group].push(d); }
 
@@ -728,9 +767,32 @@ async function loadSettings() {
       <div class="settings-group-title">\${group}</div>
       \${items.map(d => {
         const val = (values[d.key] ?? '').replace(/"/g, '&quot;');
-        const input = d.type === 'select'
-          ? \`<select class="setting-input" name="\${d.key}">\${d.options.map(o => \`<option value="\${o}"\${(values[d.key] || d.placeholder) === o ? ' selected' : ''}>\${o}</option>\`).join('')}</select>\`
-          : \`<input class="setting-input" type="\${d.type === 'password' ? 'password' : d.type === 'number' ? 'number' : 'text'}" name="\${d.key}" value="\${val}" placeholder="\${d.placeholder}">\`;
+        let input;
+        if (d.type === 'voice-select') {
+          const voices = voiceData.voices || [];
+          const selected = values[d.key] || voiceData.selected || '';
+          if (voices.length) {
+            // Group voices by category, show language prefix before name
+            const byCategory = {};
+            voices.forEach(v => { const cat = v.category || 'other'; if (!byCategory[cat]) byCategory[cat] = []; byCategory[cat].push(v); });
+            const optGroups = Object.entries(byCategory).map(([cat, vs]) =>
+              \`<optgroup label="\${cat}">\${vs.map(v => {
+                const langs = v.languages && v.languages.length
+                  ? [...new Set(v.languages.map(l => (l.name || l.language || l.language_id || l).toString().toUpperCase()))].join(', ')
+                  : ((v.labels && v.labels.language) || 'Unknown').toUpperCase();
+                const ml = v.multilingual ? ', multilingual' : '';
+                return \`<option value="\${v.voice_id}"\${v.voice_id === selected ? ' selected' : ''}>\${v.name} (\${langs}\${ml})</option>\`;
+              }).join('')}</optgroup>\`
+            ).join('');
+            input = \`<select class="setting-input" id="elevenlabs-voice-select" name="\${d.key}">\${optGroups}</select>\`;
+          } else {
+            input = \`<input class="setting-input" type="text" name="\${d.key}" value="\${val}" placeholder="Enable ElevenLabs to load voices">\`;
+          }
+        } else if (d.type === 'select') {
+          input = \`<select class="setting-input" name="\${d.key}">\${d.options.map(o => \`<option value="\${o}"\${(values[d.key] || d.placeholder) === o ? ' selected' : ''}>\${o}</option>\`).join('')}</select>\`;
+        } else {
+          input = \`<input class="setting-input" type="\${d.type === 'password' ? 'password' : d.type === 'number' ? 'number' : 'text'}" name="\${d.key}" value="\${val}" placeholder="\${d.placeholder}">\`;
+        }
         return \`<div class="setting-item"><div class="setting-label">\${d.label}</div><div class="setting-desc">\${d.description}</div>\${input}</div>\`;
       }).join('')}
     </div>\`).join('');
@@ -916,6 +978,26 @@ function createServer() {
     if (req.method === 'GET' && url === '/api/whatsapp/qr') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(whatsapp.getQR()));
+      return;
+    }
+
+    // ElevenLabs: fetch available voices
+    if (req.method === 'GET' && url === '/api/elevenlabs/voices') {
+      try {
+        if (!elevenlabs.isConfigured()) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ voices: [], selected: '' }));
+          return;
+        }
+        const voices = await elevenlabs.getVoices();
+        const selected = await elevenlabs.getSelectedVoice().catch(() => '');
+        const lang = (process.env.LANGUAGE || 'en').toLowerCase();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ voices, selected, language: lang }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message, voices: [], selected: '' }));
+      }
       return;
     }
 
