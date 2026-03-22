@@ -871,7 +871,7 @@ function appendThinkingChunk(id, text) {
   }
 }
 
-function hideThinkingIndicator(id) {
+function hideThinkingIndicator(id, summary) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
   const data = streamData[id];
@@ -884,6 +884,13 @@ function hideThinkingIndicator(id) {
     if (!content || !content.trim()) {
       block.remove();
     } else {
+      // Update title with summary
+      if (summary) {
+        const summaryEl = block.querySelector('.thinking-summary');
+        if (summaryEl) {
+          summaryEl.innerHTML = '<span class="chevron">›</span> <span class="brain">🧠</span> ' + summary;
+        }
+      }
       // Collapse with smooth animation
       collapseThinkingBlock(block);
     }
@@ -971,7 +978,7 @@ function appendToolUseChunk(id, text) {
   }
 }
 
-function hideToolUseIndicator(id) {
+function hideToolUseIndicator(id, summary) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
   const data = streamData[id];
@@ -984,6 +991,13 @@ function hideToolUseIndicator(id) {
     if (!content || !content.trim()) {
       block.remove();
     } else {
+      // Update title with summary
+      if (summary) {
+        const summaryEl = block.querySelector('.tool-use-summary');
+        if (summaryEl) {
+          summaryEl.innerHTML = '<span class="chevron">›</span> <span>🔧</span> ' + summary;
+        }
+      }
       collapseToolUseBlock(block);
     }
   }
@@ -1031,7 +1045,7 @@ function toggleToolUse(summaryEl) {
 
 // ── Redacted thinking block ─────────────────────────────────────────────────
 
-function showRedactedThinking(id) {
+function showRedactedThinking(id, summary) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
   const data = streamData[id];
@@ -1040,9 +1054,10 @@ function showRedactedThinking(id) {
   if (dots) dots.remove();
   data.currentTextDiv = null;
   data.currentTextContent = '';
+  const label = summary || STRINGS.redactedThinking;
   const block = document.createElement('div');
   block.className = 'redacted-thinking-block';
-  block.innerHTML = '<div class="redacted-thinking-summary"><span>🔒</span> ' + STRINGS.redactedThinking + '</div>';
+  block.innerHTML = '<div class="redacted-thinking-summary"><span>🔒</span> ' + label + '</div>';
   bubble.appendChild(block);
 }
 
@@ -1177,7 +1192,7 @@ function connectSSE() {
       if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_thinking_end') {
-      hideThinkingIndicator(data.id);
+      hideThinkingIndicator(data.id, data.summary);
 
     } else if (data.type === 'stream_tool_use_start') {
       showToolUseIndicator(data.id, data.toolName);
@@ -1188,10 +1203,10 @@ function connectSSE() {
       if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_tool_use_end') {
-      hideToolUseIndicator(data.id);
+      hideToolUseIndicator(data.id, data.summary);
 
     } else if (data.type === 'stream_redacted_thinking') {
-      showRedactedThinking(data.id);
+      showRedactedThinking(data.id, data.summary);
       if (chatVisible) scrollChat();
 
     } else if (data.type === 'stream_chunk') {
