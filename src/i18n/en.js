@@ -26,6 +26,7 @@ Your tasks are in the instructions. Execute them and return structured:
 Rules:
 - Write in English, unless otherwise instructed
 - Messages: friendly, max. 2000 characters per message
+- To send a voice message, include a <speak>text</speak> block in any message. The text inside will be converted to speech via ElevenLabs and sent as an audio message alongside the text.
 
 ## Crontab execution rules
 If a ## Crontab section is present, process each entry as follows:
@@ -95,7 +96,18 @@ These blocks are not shown to the user.
 
 ## Crontab / Scheduling
 - If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean scheduled tasks for the heartbeat agent — use the <update_crontab> block.
-- Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).`,
+- Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).
+
+## Voice Output (Text-to-Speech)
+- If ElevenLabs is enabled and you want to send a voice message, wrap the spoken text in a <speak> tag:
+
+<speak>Hello! This text will be converted to speech and sent as a voice message.</speak>
+
+- The <speak> block is NOT shown to the user as text — it is only used for audio generation.
+- You can use multiple <speak> blocks in one response for separate voice messages.
+- Use <speak> when the user asks for voice output, or when a voice message feels natural (e.g. greetings, short announcements, emotional messages).
+- Keep spoken text concise and natural — write it as you would speak it, not as written text.
+- Do NOT use <speak> for long or complex answers — only for short, spoken-style messages.`,
   },
   whatsapp: {
     qrReady: '[WhatsApp] QR code ready — scan with WhatsApp mobile.',
@@ -109,6 +121,29 @@ These blocks are not shown to the user.
     sendError: '[WhatsApp] Send error:',
     mirrorFailed: '[WhatsApp] Mirroring failed:',
   },
+  whisper: {
+    sending: (file, bytes) => `[Whisper] Sending ${file} (${bytes} bytes) for transcription...`,
+    httpError: (status, body) => `Whisper API HTTP ${status}: ${body}`,
+    emptyResult: 'Whisper returned no text.',
+    success: (text) => `[Whisper] Transcribed: ${text}`,
+    transcribing: '[Discord] Voice message detected – transcribing...',
+    transcribeError: (msg) => `Could not transcribe voice message: ${msg}`,
+    alreadyRunning: '[Whisper] Local container already running.',
+    starting: (port) => `[Whisper] Starting local Docker container on port ${port}...`,
+    started: '[Whisper] Local container started.',
+    stopped: '[Whisper] Local container stopped.',
+    startError: (msg) => `[Whisper] Failed to start local container: ${msg}`,
+  },
+  elevenlabs: {
+    noApiKey: 'ELEVENLABS_API_KEY not set.',
+    httpError: (status, body) => `ElevenLabs API HTTP ${status}: ${body}`,
+    voicesLoaded: (n) => `[ElevenLabs] ${n} voices loaded.`,
+    noVoices: 'No ElevenLabs voices available.',
+    synthesizing: (text, voice) => `[ElevenLabs] Synthesizing "${text}…" with voice ${voice}`,
+    synthesized: (bytes) => `[ElevenLabs] Audio generated: ${bytes} bytes`,
+    sendError: (msg) => `[ElevenLabs] Send error: ${msg}`,
+    speakError: (msg) => `[ElevenLabs] TTS error: ${msg}`,
+  },
   settings: {
     groups: {
       general:   'General',
@@ -116,7 +151,9 @@ These blocks are not shown to the user.
       discord:   'Discord',
       heartbeat: 'Heartbeat',
       webServer: 'Web Server',
-      whatsapp:  'WhatsApp',
+      whisper:   'Whisper (Speech-to-Text)',
+      whatsapp:   'WhatsApp',
+      elevenlabs: 'ElevenLabs (Text-to-Speech)',
     },
     fields: {
       LANGUAGE:                { label: 'Language',             description: 'UI and log language.' },
@@ -132,7 +169,12 @@ These blocks are not shown to the user.
       WEB_HOST:                { label: 'Host',                 description: 'Bind address. 127.0.0.1 = local only, 0.0.0.0 = all interfaces.' },
       WHATSAPP_ENABLED:        { label: 'Enable WhatsApp',      description: 'Enable the WhatsApp integration. Requires a QR scan on first start.' },
       WHATSAPP_PHONE:          { label: 'Allowed Phone',        description: 'Phone number allowed to interact with the bot (e.g. +491234567890). Note: this is sometimes not your real number — check terminal logging after first connect.' },
+      WHISPER_LOCAL_ENABLED:   { label: 'Start Local Whisper',  description: 'Automatically start the Whisper Docker container on app startup.' },
+      WHISPER_URL:             { label: 'Whisper URL',          description: 'URL of the local Whisper ASR API. Default: http://localhost:9000' },
       WHATSAPP_SEND_PHONE:     { label: 'Send-To Phone',        description: 'Phone number to send heartbeat and web UI messages to. Defaults to Allowed Phone if not set.' },
+      ELEVENLABS_ENABLED:      { label: 'Enable ElevenLabs',    description: 'Enable or disable text-to-speech output via ElevenLabs.' },
+      ELEVENLABS_API_KEY:      { label: 'API Key',              description: 'ElevenLabs API key from the ElevenLabs dashboard.' },
+      ELEVENLABS_VOICE:        { label: 'Voice',                description: 'Select the language and voice for text-to-speech output.' },
     },
   },
   web: {
