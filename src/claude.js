@@ -88,6 +88,7 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
   ];
 
   let fullText = '';
+  let emittedCleanLen = 0; // tracks how much clean (tag-free) text has been emitted via onDelta
   let isThinking = false;
   let isToolUse = false;
   let hasSeenTextBlock = false;
@@ -169,8 +170,35 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
         const delta = evt.delta.text;
         if (delta) {
           fullText += delta;
-          // Only emit delta that is NOT part of an update_instructions block
-          if (onDelta) onDelta(delta);
+          // Emit only content outside custom tags (<speak>, <update_instructions>, <update_crontab>)
+          if (onDelta) {
+            const CUSTOM_TAGS = ['speak', 'update_instructions', 'update_crontab'];
+            // Compute clean text: strip all fully closed custom tags
+            let clean = fullText;
+            for (const tag of CUSTOM_TAGS) {
+              clean = clean.replace(new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g'), '');
+            }
+            // Truncate at any unclosed custom tag opening
+            for (const tag of CUSTOM_TAGS) {
+              const idx = clean.indexOf(`<${tag}>`);
+              if (idx !== -1) clean = clean.substring(0, idx);
+            }
+            // Hold back partial opening tags at the end (e.g. "<spe" might become "<speak>")
+            for (let suffixLen = 1; suffixLen <= 25 && suffixLen <= clean.length; suffixLen++) {
+              const suffix = clean.substring(clean.length - suffixLen);
+              if (!suffix.startsWith('<')) continue;
+              let partial = false;
+              for (const tag of CUSTOM_TAGS) {
+                if (`<${tag}>`.startsWith(suffix)) { partial = true; break; }
+              }
+              if (partial) { clean = clean.substring(0, clean.length - suffixLen); break; }
+            }
+            // Emit only the newly added clean portion
+            if (clean.length > emittedCleanLen) {
+              onDelta(clean.substring(emittedCleanLen));
+              emittedCleanLen = clean.length;
+            }
+          }
         }
       }
     }

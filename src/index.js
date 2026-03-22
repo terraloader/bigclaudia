@@ -133,12 +133,15 @@ async function processSpeakBlocks(speakBlocks, via, discordChannel = null, whats
     try {
       const audioBuffer = await elevenlabs.synthesize(text);
 
-      // Send to Discord as file attachment (unless suppressed by focus)
+      // Send to Discord: italic text + audio file (unless suppressed by focus)
       if (discord.isConfigured() && !shouldSuppressChannels()) {
         try {
+          const italicText = `*${text}*`;
           if (discordChannel) {
+            await discordChannel.send(italicText);
             await discordChannel.send({ files: [{ attachment: audioBuffer, name: 'voice.mp3' }] });
           } else {
+            await discord.send(italicText);
             await discord.sendFile(audioBuffer, 'voice.mp3');
           }
         } catch (err) {
@@ -146,12 +149,15 @@ async function processSpeakBlocks(speakBlocks, via, discordChannel = null, whats
         }
       }
 
-      // Send to WhatsApp as voice message (unless suppressed by focus)
+      // Send to WhatsApp: italic text + voice message (unless suppressed by focus)
       if (whatsapp.isConfigured() && !shouldSuppressChannels()) {
         try {
+          const italicText = `_${text}_`;
           if (whatsappChat) {
+            await whatsapp.sendToChat(whatsappChat, italicText);
             await whatsapp.sendAudio(audioBuffer, whatsappChat);
           } else {
+            await whatsapp.send(italicText);
             await whatsapp.sendAudio(audioBuffer);
           }
         } catch (err) {
@@ -352,7 +358,11 @@ async function runHeartbeat() {
         const txt = sm[1].trim();
         if (txt) heartbeatSpeakBlocks.push(txt);
       }
-      const cleanMsg = msg.replace(/<speak>[\s\S]*?<\/speak>/g, '').trim();
+      const cleanMsg = msg
+        .replace(/<speak>[\s\S]*?<\/speak>/g, '')
+        .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/g, '')
+        .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/g, '')
+        .trim();
 
       // Show in web UI
       if (cleanMsg) state.addChatMessage('bot', cleanMsg, 'heartbeat');
@@ -404,9 +414,15 @@ function makeDiscordChunker(sendFn = (text) => discord.send(text)) {
     );
   };
 
+  // Strip any remaining custom tags from text before sending to channels
+  const stripCustomTags = (t) => t
+    .replace(/<speak>[\s\S]*?<\/speak>/g, '')
+    .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/g, '')
+    .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/g, '');
+
   const flush = () => {
     if (timer) { clearTimeout(timer); timer = null; }
-    const text = buffer.trim();
+    const text = stripCustomTags(buffer).trim();
     buffer = '';
     if (text) send(text);
     return chain;
@@ -417,7 +433,7 @@ function makeDiscordChunker(sendFn = (text) => discord.send(text)) {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      const text = buffer.trim();
+      const text = stripCustomTags(buffer).trim();
       buffer = '';
       if (text) send(text);
     }, 3000);
