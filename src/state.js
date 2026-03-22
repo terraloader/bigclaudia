@@ -90,8 +90,8 @@ function streamThinkingChunk(id, text) {
 /**
  * Signals that thinking has ended for a streaming message.
  */
-function streamThinkingEnd(id) {
-  broadcastSSE({ type: 'stream_thinking_end', id });
+function streamThinkingEnd(id, summary) {
+  broadcastSSE({ type: 'stream_thinking_end', id, summary });
 }
 
 // ─── Tool use streaming ───────────────────────────────────────────────────────
@@ -113,8 +113,8 @@ function streamToolUseChunk(id, text) {
 /**
  * Signals that a tool_use block has ended.
  */
-function streamToolUseEnd(id) {
-  broadcastSSE({ type: 'stream_tool_use_end', id });
+function streamToolUseEnd(id, summary) {
+  broadcastSSE({ type: 'stream_tool_use_end', id, summary });
 }
 
 // ─── Redacted thinking streaming ──────────────────────────────────────────────
@@ -122,8 +122,8 @@ function streamToolUseEnd(id) {
 /**
  * Signals a redacted_thinking block (single event, no streaming content).
  */
-function streamRedactedThinking(id) {
-  broadcastSSE({ type: 'stream_redacted_thinking', id });
+function streamRedactedThinking(id, summary) {
+  broadcastSSE({ type: 'stream_redacted_thinking', id, summary });
 }
 
 /**

@@ -46,10 +46,10 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
       state.streamThinkingChunk(streamId, delta);
     },
     onThinkingEnd: () => {
-      state.streamThinkingEnd(streamId);
-      // Emit summary for channels
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
       const summary = ui.thinkingSummary(secs, thinkingChars);
+      state.streamThinkingEnd(streamId, summary);
+      // Emit summary for channels
       if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
     },
     onToolUseStart: (name) => {
@@ -63,14 +63,16 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
       state.streamToolUseChunk(streamId, json);
     },
     onToolUseEnd: () => {
-      state.streamToolUseEnd(streamId);
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
       const summary = ui.toolUseSummary(secs, toolUseChars, currentToolName);
+      state.streamToolUseEnd(streamId, summary);
+      // Emit summary for channels
       if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
     },
     onRedactedThinking: () => {
-      state.streamRedactedThinking(streamId);
       const summary = ui.redactedThinkingSummary(0);
+      state.streamRedactedThinking(streamId, summary);
+      // Emit summary for channels
       if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
     },
   };
