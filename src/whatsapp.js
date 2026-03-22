@@ -1,6 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const t = require('./i18n');
+const { splitMessage } = require('./utils/splitting');
 
 const ALLOWED_PHONE = process.env.WHATSAPP_PHONE;      // incoming: filter messages from this number
 const SEND_PHONE    = process.env.WHATSAPP_SEND_PHONE; // outgoing: send heartbeat/mirror messages here
@@ -80,7 +81,7 @@ async function send(text) {
   const phone = (SEND_PHONE || ALLOWED_PHONE || '').replace(/^\+/, '');
   if (!phone) throw new Error(t.whatsapp.phoneMissing);
   const chatId = phone + '@c.us';
-  for (const chunk of splitMessage(text)) {
+  for (const chunk of splitMessage(text, 3900)) {
     await client.sendMessage(chatId, chunk);
   }
 }
@@ -89,7 +90,7 @@ async function send(text) {
  * Sends text to a specific chat (used when replying in-context).
  */
 async function sendToChat(chat, text) {
-  for (const chunk of splitMessage(text)) {
+  for (const chunk of splitMessage(text, 3900)) {
     await chat.sendMessage(chunk);
   }
 }
@@ -137,8 +138,8 @@ async function sendAudio(audioBuffer, chat = null) {
  * Returns a stop function.
  */
 function keepTyping(chat) {
-  chat.sendStateTyping().catch(() => {});
-  const interval = setInterval(() => chat.sendStateTyping().catch(() => {}), 8000);
+  chat.sendStateTyping().catch(err => console.warn('[whatsapp] sendStateTyping failed:', err.message));
+  const interval = setInterval(() => chat.sendStateTyping().catch(err => console.warn('[whatsapp] sendStateTyping failed:', err.message)), 8000);
   return () => clearInterval(interval);
 }
 
@@ -149,20 +150,6 @@ function getQR() {
   return { qr: currentQR, authenticated };
 }
 
-/**
- * Splits long text into chunks of ≤ 4000 characters (WhatsApp limit).
- */
-function splitMessage(text, maxLength = 3900) {
-  const chunks = [];
-  while (text.length > maxLength) {
-    let splitAt = text.lastIndexOf('\n', maxLength);
-    if (splitAt < maxLength * 0.5) splitAt = maxLength;
-    chunks.push(text.slice(0, splitAt));
-    text = text.slice(splitAt).trimStart();
-  }
-  if (text) chunks.push(text);
-  return chunks;
-}
 
 function isEnabled() {
   const v = (process.env.WHATSAPP_ENABLED ?? 'false').toLowerCase();

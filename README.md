@@ -81,7 +81,7 @@ Discord integration is optional — if `DISCORD_BOT_TOKEN` is not set, the bot r
 6. Open the generated URL in your browser and invite the bot to your server.
 
 **Finding your user ID:**
-In Discord, go to **Settings → Advanced** and enable **Developer Mode**. Then right-click your own name anywhere and choose **Copy ID**. Paste this as `DISCORD_ALLOWED_USER_ID`.
+In Discord, go to **Settings → Advanced** and enable **Developer Mode**. Then click your own name anywhere and choose **Copy ID**. Paste this as `DISCORD_ALLOWED_USER_ID`.
 
 **Important things to know:**
 - BigClaudia only responds to one user (the ID you set). All other messages are silently ignored.

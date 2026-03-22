@@ -17,9 +17,11 @@ const MAX_HISTORY = 20;
 
 function broadcastSSE(data) {
   const payload = `data: ${JSON.stringify(data)}\n\n`;
+  const dead = [];
   for (const res of sseClients) {
-    try { res.write(payload); } catch { sseClients.delete(res); }
+    try { res.write(payload); } catch { dead.push(res); }
   }
+  dead.forEach(r => sseClients.delete(r));
 }
 
 // ─── Chat log ─────────────────────────────────────────────────────────────────
