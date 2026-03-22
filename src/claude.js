@@ -115,6 +115,17 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
         }
       }
 
+      // Extract thinking delta
+      if (
+        evt?.type === 'content_block_delta' &&
+        evt?.delta?.type === 'thinking_delta'
+      ) {
+        const delta = evt.delta.thinking;
+        if (delta && callbacks.onThinkingDelta) {
+          callbacks.onThinkingDelta(delta);
+        }
+      }
+
       // Extract text delta
       if (
         evt?.type === 'content_block_delta' &&

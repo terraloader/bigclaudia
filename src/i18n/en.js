@@ -227,5 +227,6 @@ These blocks are not shown to the user.
     whatsappQrTitle: 'Scan with WhatsApp',
     whatsappQrHint: 'Open WhatsApp → Linked Devices → Link a Device\nand scan this QR code.',
     whatsappAuthenticated: 'WhatsApp connected ✓',
+    thinking: 'Thinking',
   },
 };

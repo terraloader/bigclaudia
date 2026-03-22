@@ -79,6 +79,13 @@ function streamThinkingStart(id) {
 }
 
 /**
+ * Sends a thinking text chunk for a streaming message (web UI only).
+ */
+function streamThinkingChunk(id, text) {
+  broadcastSSE({ type: 'stream_thinking_chunk', id, text });
+}
+
+/**
  * Signals that thinking has ended for a streaming message.
  */
 function streamThinkingEnd(id) {
@@ -130,6 +137,7 @@ module.exports = {
   streamStart,
   streamChunk,
   streamThinkingStart,
+  streamThinkingChunk,
   streamThinkingEnd,
   streamEnd,
 };
