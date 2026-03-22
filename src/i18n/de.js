@@ -203,7 +203,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     noEntries: 'Noch keine Einträge.',
     compressedSummary: 'Komprimierte Zusammenfassung',
     noMessages: 'Noch keine Nachrichten. Schreib etwas!',
-    messagePlaceholder: 'Nachricht schreiben\u2026 (Enter zum Senden, Shift+Enter = Zeilenumbruch)',
+    messagePlaceholder: 'Nachricht schreiben\u2026',
     sendButton: 'Senden',
     stopButton: 'Stopp',
     chatHint: '/new \u2192 Session zurücksetzen &nbsp;\u00b7&nbsp; /stop \u2192 Antwort stoppen &nbsp;\u00b7&nbsp; /restart \u2192 Server neustarten &nbsp;\u00b7&nbsp; Shift+Enter \u2192 Zeilenumbruch',
@@ -235,5 +235,6 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     thinkingSummary: (seconds, chars) => `Nachgedacht für ${seconds} Sekunden, ${chars} Zeichen lang.`,
     toolUseSummary: (seconds, chars, name) => `Tool aufgerufen${name ? ' (' + name + ')' : ''} für ${seconds} Sekunden, ${chars} Zeichen lang.`,
     redactedThinkingSummary: (seconds) => `Geschwärztes Denken für ${seconds} Sekunden.`,
+    channels: 'Kanäle',
   },
 };

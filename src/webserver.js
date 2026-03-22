@@ -196,7 +196,7 @@ function getHTML(ui) {
 
   /* ── Header ── */
   header {
-    background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
     padding: 14px 24px;
     display: flex; align-items: center; gap: 14px;
@@ -207,11 +207,9 @@ function getHTML(ui) {
   header h1 { font-size: 1.3rem; font-weight: 700; }
   header h1 span { color: var(--accent); }
   .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: .8rem; color: var(--muted); }
-  .theme-toggle { display: flex; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  .theme-btn { background: none; border: none; cursor: pointer; padding: 5px 8px; color: var(--muted); font-size: .75rem; display: flex; align-items: center; transition: all .15s; }
-  .theme-btn:hover { color: var(--text); }
-  .theme-btn.active { background: var(--accent); color: var(--bg); }
-  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse 2s ease-in-out infinite; display: inline-block; margin-right: 5px; }
+  .theme-toggle { display: flex; }
+  .theme-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 5px 8px; color: var(--muted); font-size: .85rem; display: flex; align-items: center; transition: all .15s; }
+  .theme-btn:hover { color: var(--text); border-color: var(--accent); }
   .suppress-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; transition: background .3s, box-shadow .3s; }
   .suppress-dot.active { background: #ef4444; box-shadow: 0 0 5px #ef4444; animation: pulse 2s ease-in-out infinite; }
   .suppress-dot.inactive { background: #22c55e; box-shadow: 0 0 5px #22c55e; animation: pulse 2s ease-in-out infinite; }
@@ -543,13 +541,10 @@ function getHTML(ui) {
   <img class="hb-icon" src="data:image/webp;base64,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" alt="Logo" />
   <h1><span>BigClaudia</span></h1>
   <div class="header-right">
-    <div class="theme-toggle">
-      <button class="theme-btn" data-mode="light" title="Light">☀️</button>
-      <button class="theme-btn" data-mode="auto" title="Auto">⚙️</button>
-      <button class="theme-btn" data-mode="dark" title="Dark">🌙</button>
-    </div>
     <span class="suppress-indicator" id="suppress-indicator" title="Channel suppression"><span class="suppress-dot hidden" id="suppress-dot"></span><span id="suppress-label"></span></span>
-    <span><span class="status-dot"></span>online</span>
+    <div class="theme-toggle">
+      <button class="theme-btn" id="theme-cycle-btn" title="Toggle theme">☀️</button>
+    </div>
   </div>
 </header>
 
@@ -1114,10 +1109,10 @@ function updateSuppressDot() {
   _suppressDot.classList.remove('hidden');
   if (focused) {
     _suppressDot.className = 'suppress-dot active';
-    _suppressLabel.textContent = 'muted';
+    _suppressLabel.textContent = '${ui.channels}';
   } else {
     _suppressDot.className = 'suppress-dot inactive';
-    _suppressLabel.textContent = 'forwarding';
+    _suppressLabel.textContent = '${ui.channels}';
   }
 }
 
@@ -1496,22 +1491,26 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ── Theme ────────────────────────────────────────────────────────────────────
+const _themeIcons = { light: '☀️', auto: '⚙️', dark: '🌙' };
+const _themeCycle = ['light', 'auto', 'dark'];
+const _themeCycleBtn = document.getElementById('theme-cycle-btn');
+
 function applyTheme(mode) {
   const root = document.documentElement;
   if (mode === 'dark')  root.setAttribute('data-theme', 'dark');
   else if (mode === 'light') root.setAttribute('data-theme', 'light');
   else root.removeAttribute('data-theme');
-  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  _themeCycleBtn.textContent = _themeIcons[mode] || _themeIcons.auto;
 }
 (function () {
   const saved = localStorage.getItem('theme') || 'auto';
   applyTheme(saved);
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.mode;
-      localStorage.setItem('theme', mode);
-      applyTheme(mode);
-    });
+  _themeCycleBtn.addEventListener('click', () => {
+    const current = localStorage.getItem('theme') || 'auto';
+    const idx = _themeCycle.indexOf(current);
+    const next = _themeCycle[(idx + 1) % _themeCycle.length];
+    localStorage.setItem('theme', next);
+    applyTheme(next);
   });
 })();
 
