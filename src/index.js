@@ -17,14 +17,56 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   const { instructions, crontabRaw } = await readHeartbeat();
   const fullInstructions = instructions + (crontabRaw ? '\n\n' + crontabRaw : '');
   const streamId = state.streamStart(via);
+
+  // Track timing/length for channel summaries
+  let blockStartTime = null;
+  let thinkingChars = 0;
+  let toolUseChars = 0;
+  let currentToolName = '';
+  const ui = t.ui;
+
   const onDelta = (delta) => {
     state.streamChunk(streamId, delta);
     if (extraOnDelta) extraOnDelta(delta);
   };
   const callbacks = {
-    onThinkingStart: () => state.streamThinkingStart(streamId),
-    onThinkingDelta: (delta) => state.streamThinkingChunk(streamId, delta),
-    onThinkingEnd: () => state.streamThinkingEnd(streamId),
+    onThinkingStart: () => {
+      blockStartTime = Date.now();
+      thinkingChars = 0;
+      state.streamThinkingStart(streamId);
+    },
+    onThinkingDelta: (delta) => {
+      thinkingChars += delta.length;
+      state.streamThinkingChunk(streamId, delta);
+    },
+    onThinkingEnd: () => {
+      state.streamThinkingEnd(streamId);
+      // Emit summary for channels
+      const secs = Math.round((Date.now() - blockStartTime) / 1000);
+      const summary = ui.thinkingSummary(secs, thinkingChars);
+      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+    },
+    onToolUseStart: (name) => {
+      blockStartTime = Date.now();
+      toolUseChars = 0;
+      currentToolName = name;
+      state.streamToolUseStart(streamId, name);
+    },
+    onToolUseInput: (json) => {
+      toolUseChars += json.length;
+      state.streamToolUseChunk(streamId, json);
+    },
+    onToolUseEnd: () => {
+      state.streamToolUseEnd(streamId);
+      const secs = Math.round((Date.now() - blockStartTime) / 1000);
+      const summary = ui.toolUseSummary(secs, toolUseChars, currentToolName);
+      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+    },
+    onRedactedThinking: () => {
+      state.streamRedactedThinking(streamId);
+      const summary = ui.redactedThinkingSummary(0);
+      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+    },
   };
 
   const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(

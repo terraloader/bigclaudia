@@ -229,5 +229,10 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     whatsappQrHint: 'WhatsApp öffnen → Verknüpfte Geräte → Gerät verknüpfen\nund diesen QR-Code scannen.',
     whatsappAuthenticated: 'WhatsApp verbunden ✓',
     thinking: 'Denkt nach',
+    toolUse: 'Tool-Aufruf',
+    redactedThinking: 'Geschwärztes Denken',
+    thinkingSummary: (seconds, chars) => `Nachgedacht für ${seconds} Sekunden, ${chars} Zeichen lang.`,
+    toolUseSummary: (seconds, chars, name) => `Tool aufgerufen${name ? ' (' + name + ')' : ''} für ${seconds} Sekunden, ${chars} Zeichen lang.`,
+    redactedThinkingSummary: (seconds) => `Geschwärztes Denken für ${seconds} Sekunden.`,
   },
 };

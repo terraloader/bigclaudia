@@ -92,6 +92,38 @@ function streamThinkingEnd(id) {
   broadcastSSE({ type: 'stream_thinking_end', id });
 }
 
+// ─── Tool use streaming ───────────────────────────────────────────────────────
+
+/**
+ * Signals that a tool_use block has started.
+ */
+function streamToolUseStart(id, toolName) {
+  broadcastSSE({ type: 'stream_tool_use_start', id, toolName });
+}
+
+/**
+ * Sends a tool_use input chunk for a streaming message (web UI).
+ */
+function streamToolUseChunk(id, text) {
+  broadcastSSE({ type: 'stream_tool_use_chunk', id, text });
+}
+
+/**
+ * Signals that a tool_use block has ended.
+ */
+function streamToolUseEnd(id) {
+  broadcastSSE({ type: 'stream_tool_use_end', id });
+}
+
+// ─── Redacted thinking streaming ──────────────────────────────────────────────
+
+/**
+ * Signals a redacted_thinking block (single event, no streaming content).
+ */
+function streamRedactedThinking(id) {
+  broadcastSSE({ type: 'stream_redacted_thinking', id });
+}
+
 /**
  * Finalizes a streaming message and stores it in the chat log.
  */
@@ -139,5 +171,9 @@ module.exports = {
   streamThinkingStart,
   streamThinkingChunk,
   streamThinkingEnd,
+  streamToolUseStart,
+  streamToolUseChunk,
+  streamToolUseEnd,
+  streamRedactedThinking,
   streamEnd,
 };

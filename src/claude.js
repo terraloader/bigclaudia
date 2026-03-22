@@ -66,7 +66,7 @@ async function askClaude(systemPrompt, userMessage) {
  * @param {{ role: 'user'|'assistant', content: string }[]} history
  * @param {string} heartbeatInstructions
  * @param {(delta: string) => void} [onDelta] - called per text delta
- * @param {{ onThinkingStart?: () => void, onThinkingEnd?: () => void }} [callbacks] - optional thinking callbacks
+ * @param {{ onThinkingStart?: () => void, onThinkingEnd?: () => void, onToolUseStart?: (name: string) => void, onToolUseInput?: (json: string) => void, onToolUseEnd?: () => void, onRedactedThinking?: () => void }} [callbacks] - optional block callbacks
  * @returns {{ reply: string, update_instructions: string }}
  */
 async function chatWithClaude(userMessage, history = [], heartbeatInstructions = '', onDelta = null, callbacks = {}) {
@@ -89,22 +89,38 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
 
   let fullText = '';
   let isThinking = false;
+  let isToolUse = false;
   let hasSeenTextBlock = false;
 
   await streamCli(args, prompt, (obj) => {
     if (obj.type === 'stream_event') {
       const evt = obj.event;
 
-      // Track content block transitions (thinking → text)
+      // Track content block transitions (thinking → text, tool_use, redacted_thinking)
       if (evt?.type === 'content_block_start') {
         const blockType = evt.content_block?.type;
         if (blockType === 'thinking') {
           isThinking = true;
           if (callbacks.onThinkingStart) callbacks.onThinkingStart();
+        } else if (blockType === 'redacted_thinking') {
+          // Redacted thinking is a single block with no streaming content
+          if (callbacks.onRedactedThinking) callbacks.onRedactedThinking();
+        } else if (blockType === 'tool_use') {
+          if (isThinking) {
+            isThinking = false;
+            if (callbacks.onThinkingEnd) callbacks.onThinkingEnd();
+          }
+          isToolUse = true;
+          const toolName = evt.content_block?.name || '';
+          if (callbacks.onToolUseStart) callbacks.onToolUseStart(toolName);
         } else if (blockType === 'text') {
           if (isThinking) {
             isThinking = false;
             if (callbacks.onThinkingEnd) callbacks.onThinkingEnd();
+          }
+          if (isToolUse) {
+            isToolUse = false;
+            if (callbacks.onToolUseEnd) callbacks.onToolUseEnd();
           }
           // Add line break between separate text blocks (e.g. before/after tool use)
           if (hasSeenTextBlock && fullText.length > 0) {
@@ -112,6 +128,14 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
             if (onDelta) onDelta('\n\n');
           }
           hasSeenTextBlock = true;
+        }
+      }
+
+      // Handle content_block_stop to close open blocks
+      if (evt?.type === 'content_block_stop') {
+        if (isToolUse) {
+          isToolUse = false;
+          if (callbacks.onToolUseEnd) callbacks.onToolUseEnd();
         }
       }
 
@@ -123,6 +147,17 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
         const delta = evt.delta.thinking;
         if (delta && callbacks.onThinkingDelta) {
           callbacks.onThinkingDelta(delta);
+        }
+      }
+
+      // Extract tool_use input delta
+      if (
+        evt?.type === 'content_block_delta' &&
+        evt?.delta?.type === 'input_json_delta'
+      ) {
+        const delta = evt.delta.partial_json;
+        if (delta && callbacks.onToolUseInput) {
+          callbacks.onToolUseInput(delta);
         }
       }
 
