@@ -203,7 +203,7 @@ These blocks are not shown to the user.
     noEntries: 'No entries yet.',
     compressedSummary: 'Compressed Summary',
     noMessages: 'No messages yet. Write something!',
-    messagePlaceholder: 'Write a message\u2026 (Enter to send, Shift+Enter = new line)',
+    messagePlaceholder: 'Write a message\u2026',
     sendButton: 'Send',
     stopButton: 'Stop',
     chatHint: '/new \u2192 Reset session &nbsp;\u00b7&nbsp; /stop \u2192 Stop response &nbsp;\u00b7&nbsp; /restart \u2192 Restart server &nbsp;\u00b7&nbsp; Shift+Enter \u2192 new line',
@@ -235,5 +235,6 @@ These blocks are not shown to the user.
     thinkingSummary: (seconds, chars) => `Thought for ${seconds} seconds, ${chars} characters long.`,
     toolUseSummary: (seconds, chars, name) => `Tool called${name ? ' (' + name + ')' : ''} for ${seconds} seconds, ${chars} characters long.`,
     redactedThinkingSummary: (seconds) => `Redacted thinking for ${seconds} seconds.`,
+    channels: 'Channels',
   },
 };
