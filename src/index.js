@@ -11,6 +11,7 @@ const state = require('./state');
 const t = require('./i18n');
 
 const fs = require('fs');
+const { saveImage, downloadAndSave, formatImageRefs, formatDocumentRefs, cleanupOldFiles } = require('./images');
 
 const WHISPER_LOCAL_ENABLED = (process.env.WHISPER_LOCAL_ENABLED || 'false').toLowerCase() === 'true';
 const SUPPRESS_CHANNELS_ON_FOCUS = (process.env.SUPPRESS_CHANNELS_ON_FOCUS || 'false').toLowerCase() === 'true';
@@ -63,10 +64,13 @@ function shouldSuppressChannels() {
 }
 
 /** Processes a chat message with streaming and returns { reply, update_instructions }. */
-async function processWithStreaming(text, via, extraOnDelta = null) {
+async function processWithStreaming(text, via, extraOnDelta = null, imagePaths = null, documentPaths = null) {
   const { instructions, crontabRaw } = await readHeartbeat();
   const fullInstructions = instructions + (crontabRaw ? '\n\n' + crontabRaw : '');
   const streamId = state.streamStart(via);
+
+  // Append image and document references to the message for Claude CLI
+  const messageForClaude = text + formatImageRefs(imagePaths) + formatDocumentRefs(documentPaths);
 
   // Track timing/length for channel summaries
   let blockStartTime = null;
@@ -132,7 +136,7 @@ async function processWithStreaming(text, via, extraOnDelta = null) {
   };
 
   const { reply, update_instructions, update_crontab, speakBlocks } = await chatWithClaude(
-    text, state.getHistory(), fullInstructions, onDelta, callbacks
+    messageForClaude, state.getHistory(), fullInstructions, onDelta, callbacks
   );
 
   state.streamEnd(streamId, reply, via);
@@ -259,7 +263,7 @@ async function processMessage(text, via, extraOnDelta = null, context = {}) {
     return { reply: t.chat.restarting };
   }
 
-  const { reply, update_instructions, update_crontab, speakBlocks } = await processWithStreaming(text, via, extraOnDelta);
+  const { reply, update_instructions, update_crontab, speakBlocks } = await processWithStreaming(text, via, extraOnDelta, context.imagePaths || null, context.documentPaths || null);
 
   if (update_instructions && update_instructions.trim()) {
     await updateInstructions(update_instructions.trim());
@@ -313,7 +317,40 @@ async function handleDiscordMessage(message) {
     }
   }
 
-  if (!text) return;
+  // ── Image attachment handling ───────────────────────────────────────────────
+  const imageAttachments = message.attachments.filter(
+    (a) => a.contentType?.startsWith('image/') || IMAGE_EXTS.test(a.name || '')
+  );
+  const imagePaths = [];
+  for (const att of imageAttachments) {
+    try {
+      const savedPath = await downloadAndSave(att.url, att.name || 'image.png');
+      imagePaths.push(savedPath);
+      console.log(`[Discord] Image saved: ${savedPath}`);
+    } catch (err) {
+      console.error(`[Discord] Failed to download image: ${err.message}`);
+    }
+  }
+
+  // ── Document attachment handling (non-image, non-audio) ───────────────────
+  const docAttachments = message.attachments.filter(
+    (a) => !a.contentType?.startsWith('audio/') && !a.name?.endsWith('.ogg') &&
+           !a.contentType?.startsWith('image/') && !IMAGE_EXTS.test(a.name || '')
+  );
+  const documentPaths = [];
+  for (const att of docAttachments) {
+    try {
+      const savedPath = await downloadAndSave(att.url, att.name || 'document');
+      documentPaths.push({ path: savedPath, name: att.name || 'document' });
+      console.log(`[Discord] Document saved: ${savedPath}`);
+    } catch (err) {
+      console.error(`[Discord] Failed to download document: ${err.message}`);
+    }
+  }
+
+  if (!text && imagePaths.length === 0 && documentPaths.length === 0) return;
+  if (!text && imagePaths.length > 0) text = 'Hier ist ein Bild.';
+  if (!text && documentPaths.length > 0) text = 'Hier ist ein Dokument.';
 
   // /stop bypasses the queue for instant execution
   if (text.trim() === '/stop') {
@@ -327,13 +364,13 @@ async function handleDiscordMessage(message) {
 
   console.log(t.discord.messageFrom(message.author.tag, text.substring(0, 100)));
 
-  const msg = state.addChatMessage('user', text, 'discord');
+  const msg = state.addChatMessage('user', text, 'discord', imagePaths.length > 0 ? imagePaths : null, documentPaths.length > 0 ? documentPaths : null);
 
   await enqueue(msg.id, async () => {
     const stopTyping = discord.keepTyping(message.channel);
     const chunker = makeDiscordChunker((text) => discord.sendToChannel(message.channel, text));
     try {
-      await processMessage(text, 'discord', chunker.onDelta, { discordChannel: message.channel });
+      await processMessage(text, 'discord', chunker.onDelta, { discordChannel: message.channel, imagePaths, documentPaths: documentPaths.map(d => d.path) });
     } catch (err) {
       console.error(t.discord.error, err.message);
       const errMsg = t.chat.error(err.message);
@@ -349,8 +386,57 @@ async function handleDiscordMessage(message) {
 // ─── WhatsApp message handler ─────────────────────────────────────────────────
 
 async function handleWhatsappMessage(message) {
-  const text = message.body.trim();
-  if (!text) return;
+  let text = message.body.trim();
+
+  // ── Voice message handling ─────────────────────────────────────────────────
+  if (message.hasMedia && (message.type === 'ptt' || message.type === 'audio')) {
+    try {
+      const media = await message.downloadMedia();
+      if (media && media.mimetype && media.mimetype.startsWith('audio/')) {
+        console.log(t.whisper.transcribing);
+        const buf = Buffer.from(media.data, 'base64');
+        const ext = media.mimetype.includes('ogg') ? 'ogg' : (media.mimetype.split('/')[1] || 'ogg');
+        const transcribed = await transcribe(buf, `whatsapp-voice.${ext}`, process.env.WHISPER_LANGUAGE || null);
+        const quote = transcribed.split('\n').map((l) => `> ${l}`).join('\n');
+        text = text ? `${quote}\n\n${text}` : quote;
+        console.log(`[WhatsApp] Voice message transcribed: ${transcribed.substring(0, 100)}`);
+      }
+    } catch (err) {
+      console.error(`[WhatsApp] Failed to transcribe voice message: ${err.message}`);
+      const chat = await message.getChat();
+      try { await whatsapp.sendToChat(chat, `⚠️ Sprachnachricht konnte nicht transkribiert werden: ${err.message}`); } catch {}
+      return;
+    }
+  }
+
+  // ── Image & document handling ───────────────────────────────────────────────
+  const imagePaths = [];
+  const documentPaths = [];
+  if (message.hasMedia && message.type !== 'ptt' && message.type !== 'audio') {
+    try {
+      const media = await message.downloadMedia();
+      if (media && media.mimetype && media.mimetype.startsWith('image/')) {
+        const ext = media.mimetype.split('/')[1] || 'png';
+        const filename = `whatsapp-${Date.now()}.${ext.replace('jpeg', 'jpg')}`;
+        const savedPath = saveImage(Buffer.from(media.data, 'base64'), filename);
+        imagePaths.push(savedPath);
+        console.log(`[WhatsApp] Image saved: ${savedPath}`);
+      } else if (media && media.data) {
+        // Non-image, non-audio file → treat as document
+        const ext = (media.mimetype || 'application/octet-stream').split('/')[1] || 'bin';
+        const origName = media.filename || `whatsapp-doc-${Date.now()}.${ext}`;
+        const savedPath = saveImage(Buffer.from(media.data, 'base64'), origName);
+        documentPaths.push({ path: savedPath, name: origName });
+        console.log(`[WhatsApp] Document saved: ${savedPath}`);
+      }
+    } catch (err) {
+      console.error(`[WhatsApp] Failed to download media: ${err.message}`);
+    }
+  }
+
+  if (!text && imagePaths.length === 0 && documentPaths.length === 0) return;
+  if (!text && imagePaths.length > 0) text = 'Hier ist ein Bild.';
+  if (!text && documentPaths.length > 0) text = 'Hier ist ein Dokument.';
 
   // /stop bypasses the queue for instant execution
   if (text === '/stop') {
@@ -365,14 +451,14 @@ async function handleWhatsappMessage(message) {
 
   console.log(t.whatsapp.unknownPhone(text.substring(0, 100)).replace('ignored.', '→ received'));
 
-  const msg = state.addChatMessage('user', text, 'whatsapp');
+  const msg = state.addChatMessage('user', text, 'whatsapp', imagePaths.length > 0 ? imagePaths : null, documentPaths.length > 0 ? documentPaths : null);
   const chat = await message.getChat();
 
   await enqueue(msg.id, async () => {
     const stopTyping = whatsapp.keepTyping(chat);
     const chunker = makeDiscordChunker((chunk) => whatsapp.sendToChat(chat, chunk));
     try {
-      await processMessage(text, 'whatsapp', chunker.onDelta, { whatsappChat: chat });
+      await processMessage(text, 'whatsapp', chunker.onDelta, { whatsappChat: chat, imagePaths, documentPaths: documentPaths.map(d => d.path) });
     } catch (err) {
       console.error(t.whatsapp.error, err.message);
       const errMsg = t.chat.error(err.message);
@@ -558,6 +644,10 @@ async function main() {
   console.log(t.bot.starting);
   console.log(t.bot.heartbeatInterval(HEARTBEAT_INTERVAL_MS / 1000 / 60));
 
+  // Clean up old temp images on startup and periodically (every 6 hours)
+  cleanupOldFiles();
+  setInterval(cleanupOldFiles, 6 * 60 * 60 * 1000);
+
   // Start local Whisper container if enabled
   if (WHISPER_LOCAL_ENABLED) {
     try {
@@ -571,7 +661,7 @@ async function main() {
   if (created) console.log(t.bot.heartbeatCreated);
 
   // Register chat processor for Web UI
-  setMessageProcessor(async (text) => {
+  setMessageProcessor(async (text, imagePaths = [], documentPaths = []) => {
     // /stop bypasses the queue for instant execution
     if (text.trim() === '/stop') {
       killCurrentProcess();
@@ -581,7 +671,7 @@ async function main() {
       return;
     }
 
-    const msg = state.addChatMessage('user', text, 'web');
+    const msg = state.addChatMessage('user', text, 'web', imagePaths.length > 0 ? imagePaths : null, documentPaths.length > 0 ? documentPaths : null);
 
     const isCmd = text.trim() === '/new' || text.trim() === '/stop' || text.trim() === '/restart';
 
@@ -614,7 +704,7 @@ async function main() {
         dChunker?.onDelta(delta);
         wChunker?.onDelta(delta);
       };
-      await processMessage(text, 'web', onDelta);
+      await processMessage(text, 'web', onDelta, { imagePaths, documentPaths: documentPaths.map(d => d.path) });
       if (dChunker) await dChunker.flush();
       if (wChunker) await wChunker.flush();
     });

@@ -7,3 +7,4 @@ memory/
 .wwebjs_auth/
 .wwebjs_cache/
 todos.txt
+temp/

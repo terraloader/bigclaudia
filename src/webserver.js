@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const { readHeartbeat, getFileSize, MAX_SIZE } = require('./memory');
+const { saveBase64Image } = require('./images');
 const whatsapp = require('./whatsapp');
 const elevenlabs = require('./elevenlabs');
 const { killCurrentProcess } = require('./claude');
@@ -129,10 +130,15 @@ async function getHeartbeatApiData() {
 
 // ─── Read request body ────────────────────────────────────────────────────────
 
-function readBody(req) {
+function readBody(req, maxSize = 50 * 1024 * 1024) { // 50 MB default limit (for base64 images)
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk.toString(); });
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxSize) { req.destroy(); reject(new Error('Body too large')); return; }
+      body += chunk.toString();
+    });
     req.on('end', () => {
       try { resolve(JSON.parse(body)); } catch { resolve({}); }
     });
@@ -508,6 +514,34 @@ function getHTML(ui) {
   .stop-btn svg { width: 16px; height: 16px; }
   .chat-hint { font-size: .7rem; color: var(--muted); margin-top: 6px; }
 
+  /* Image attach button */
+  .attach-btn { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .15s; }
+  .attach-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .attach-btn svg { width: 18px; height: 18px; }
+
+  /* Image preview area */
+  .image-preview-area { display: flex; gap: 8px; flex-wrap: wrap; padding: 0; margin: 0 0 8px 0; }
+  .image-preview-area:empty { display: none; }
+  .image-preview-item { position: relative; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .image-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+  .image-preview-item .remove-btn { position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,.7); color: #fff; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .image-preview-item .remove-btn:hover { background: var(--danger); }
+
+  /* Chat message images */
+  .msg-images { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .msg-images img { max-width: 200px; max-height: 150px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
+  .msg-images img:hover { opacity: .85; }
+  .msg-documents { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .msg-document { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text-secondary); text-decoration: none; font-size: 13px; transition: background .15s; }
+  .msg-document:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+  .msg-document .doc-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .msg-document span { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-preview-item .doc-preview { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 8px; }
+
+  /* Drag & drop overlay */
+  .drop-overlay { display: none; position: absolute; inset: 0; background: rgba(99,102,241,.15); border: 2px dashed var(--accent); border-radius: 12px; z-index: 100; align-items: center; justify-content: center; font-size: 1.1rem; color: var(--accent); font-weight: 600; pointer-events: none; }
+  .drop-overlay.active { display: flex; }
+
   /* Settings */
   #view-settings { flex-direction: column; }
   .settings-wrap { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
@@ -628,8 +662,14 @@ function getHTML(ui) {
   <div class="chat-messages" id="chat-messages">
     <div class="chat-empty" id="chat-empty">${ui.noMessages}</div>
   </div>
-  <div class="chat-input-area">
+  <div class="chat-input-area" style="position:relative;">
+    <div class="drop-overlay" id="drop-overlay">Dateien hier ablegen</div>
+    <div class="image-preview-area" id="image-preview"></div>
     <div class="chat-input-row">
+      <button class="attach-btn" id="attach-btn" title="Datei anhängen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+      </button>
+      <input type="file" id="file-input" multiple style="display:none;">
       <textarea class="chat-input" id="chat-input" placeholder="${ui.messagePlaceholder}" rows="1"></textarea>
       <button class="stop-btn" id="stop-btn" title="${ui.stopButton}">
         <svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
@@ -806,12 +846,32 @@ function renderMessage(msg) {
     ? marked.parse(msg.content)
     : msg.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');
 
+  // Render image thumbnails if present
+  let imagesHtml = '';
+  if (msg.images && msg.images.length > 0) {
+    imagesHtml = '<div class="msg-images">' + msg.images.map(p => {
+      const src = '/api/file?path=' + encodeURIComponent(p);
+      const name = p.split('/').pop();
+      return '<img src="' + src + '" alt="' + name + '" title="' + name + '" onclick="openImageOverlay(this.src)">';
+    }).join('') + '</div>';
+  }
+
+  // Render document attachments with paperclip icon
+  let docsHtml = '';
+  if (msg.documents && msg.documents.length > 0) {
+    docsHtml = '<div class="msg-documents">' + msg.documents.map(d => {
+      const href = '/api/file?path=' + encodeURIComponent(d.path) + '&download=1';
+      const displayName = d.name || d.path.split('/').pop();
+      return '<a class="msg-document" href="' + href + '" download="' + displayName + '" title="' + displayName + '"><svg class="doc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg><span>' + displayName + '</span></a>';
+    }).join('') + '</div>';
+  }
+
   div.innerHTML = \`
     <div class="msg-meta">
       <span class="via-badge \${viaClass}">\${viaLabel}</span>
       <span>\${fmtTime(msg.timestamp)}</span>
     </div>
-    <div class="msg-bubble">\${content}</div>\`;
+    <div class="msg-bubble">\${content}\${imagesHtml}\${docsHtml}</div>\`;
   document.getElementById('chat-messages').appendChild(div);
 }
 
@@ -1363,29 +1423,160 @@ async function stopChat() {
   }
 }
 
+// ── File handling (images + documents) ────────────────────────────────────────
+const pendingImages = []; // { file: File, dataUrl: string, base64: string }
+const pendingDocuments = []; // { file: File, base64: string }
+
+function addFiles(files) {
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      if (pendingImages.length >= 10) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        pendingImages.push({ file, dataUrl, base64 });
+        renderFilePreviews();
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // Treat as document
+      if (pendingDocuments.length >= 10) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        pendingDocuments.push({ file, base64 });
+        renderFilePreviews();
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+}
+
+function removeImage(index) {
+  pendingImages.splice(index, 1);
+  renderFilePreviews();
+}
+
+function removeDocument(index) {
+  pendingDocuments.splice(index, 1);
+  renderFilePreviews();
+}
+
+function clearImages() {
+  pendingImages.length = 0;
+  pendingDocuments.length = 0;
+  renderFilePreviews();
+}
+
+function renderFilePreviews() {
+  const container = document.getElementById('image-preview');
+  container.innerHTML = '';
+  pendingImages.forEach((img, i) => {
+    const item = document.createElement('div');
+    item.className = 'image-preview-item';
+    item.innerHTML = '<img src="' + img.dataUrl + '" alt="' + img.file.name + '"><button class="remove-btn" title="Entfernen">&times;</button>';
+    item.querySelector('.remove-btn').addEventListener('click', () => removeImage(i));
+    container.appendChild(item);
+  });
+  pendingDocuments.forEach((doc, i) => {
+    const item = document.createElement('div');
+    item.className = 'image-preview-item doc-preview-item';
+    item.innerHTML = '<div class="doc-preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg><span style="font-size:11px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + doc.file.name + '</span></div><button class="remove-btn" title="Entfernen">&times;</button>';
+    item.querySelector('.remove-btn').addEventListener('click', () => removeDocument(i));
+    container.appendChild(item);
+  });
+}
+
+// Attach button & file input
+document.getElementById('attach-btn').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', (e) => {
+  addFiles(e.target.files);
+  e.target.value = ''; // reset so same file can be re-selected
+});
+
+// Drag & drop on chat input area
+const inputArea = document.querySelector('.chat-input-area');
+let dragCounter = 0;
+inputArea.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  document.getElementById('drop-overlay').classList.add('active');
+});
+inputArea.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
+    document.getElementById('drop-overlay').classList.remove('active');
+  }
+});
+inputArea.addEventListener('dragover', (e) => e.preventDefault());
+inputArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  document.getElementById('drop-overlay').classList.remove('active');
+  if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+});
+
+// Paste files from clipboard
+document.getElementById('chat-input').addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const pastedFiles = [];
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) pastedFiles.push(file);
+    }
+  }
+  if (pastedFiles.length > 0) {
+    e.preventDefault();
+    addFiles(pastedFiles);
+  }
+});
+
 // ── Send message ─────────────────────────────────────────────────────────────
 async function sendMessage() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && pendingImages.length === 0 && pendingDocuments.length === 0) return;
 
   // /stop is handled client-side regardless of pendingReply state
   if (text === '/stop') {
     input.value = '';
     input.style.height = 'auto';
+    clearImages();
     await stopChat();
     input.focus();
     return;
   }
 
+  // Prepare file payloads
+  const images = pendingImages.map(img => ({
+    name: img.file.name,
+    data: img.base64,
+  }));
+  const documents = pendingDocuments.map(doc => ({
+    name: doc.file.name,
+    data: doc.base64,
+  }));
+
   input.value = '';
   input.style.height = 'auto';
+  clearImages();
 
   try {
+    const payload = { message: text };
+    if (images.length > 0) payload.images = images;
+    if (documents.length > 0) payload.documents = documents;
     await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify(payload),
     });
   } catch(e) {
     console.error(STRINGS.sendError, e);
@@ -1621,10 +1812,44 @@ function createServer() {
 
       const body = await readBody(req).catch(() => ({}));
       const text = (body.message || '').trim();
-      if (!text || !_messageProcessor) return;
+
+      // Save uploaded images (base64) to temp folder
+      const imagePaths = [];
+      if (body.images && Array.isArray(body.images)) {
+        for (const img of body.images) {
+          if (img.data && img.name) {
+            try {
+              const savedPath = saveBase64Image(img.data, img.name);
+              imagePaths.push(savedPath);
+              console.log(`[Web] Image saved: ${savedPath}`);
+            } catch (err) {
+              console.error(`[Web] Failed to save image: ${err.message}`);
+            }
+          }
+        }
+      }
+
+      // Save uploaded documents (base64) to temp folder
+      const documentPaths = [];
+      if (body.documents && Array.isArray(body.documents)) {
+        for (const doc of body.documents) {
+          if (doc.data && doc.name) {
+            try {
+              const savedPath = saveBase64Image(doc.data, doc.name); // reuse same save fn
+              documentPaths.push({ path: savedPath, name: doc.name });
+              console.log(`[Web] Document saved: ${savedPath}`);
+            } catch (err) {
+              console.error(`[Web] Failed to save document: ${err.message}`);
+            }
+          }
+        }
+      }
+
+      if ((!text && imagePaths.length === 0 && documentPaths.length === 0) || !_messageProcessor) return;
+      const finalText = text || (imagePaths.length > 0 ? 'Hier ist ein Bild.' : documentPaths.length > 0 ? 'Hier ist ein Dokument.' : '');
 
       // Asynchron verarbeiten (Antwort kommt via SSE)
-      _messageProcessor(text).catch((err) => {
+      _messageProcessor(finalText, imagePaths, documentPaths).catch((err) => {
         console.error(t.web.processingError, err.message);
         state.addChatMessage('bot', t.chat.error(err.message), 'web');
       });
@@ -1726,19 +1951,40 @@ function createServer() {
       return;
     }
 
-    // Serve local files (images) for tool-block thumbnails
+    // Serve local files (images & documents) from temp folder
     if (req.method === 'GET' && url === '/api/file') {
       const qs = req.url.split('?')[1] || '';
       const params = new URLSearchParams(qs);
       const filePath = params.get('path');
+      const isDownload = params.get('download') === '1';
       if (!filePath) { res.writeHead(400); res.end(); return; }
-      const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico'];
-      const ext = path.extname(filePath).toLowerCase();
-      if (!IMAGE_EXTS.includes(ext)) { res.writeHead(403); res.end('Only image files allowed'); return; }
+      // Security: only serve files from the temp directory
+      const tempDir = path.join(__dirname, '..', 'temp');
+      const resolved = path.resolve(filePath);
+      if (!resolved.startsWith(tempDir)) { res.writeHead(403); res.end('Access denied'); return; }
       try {
         const data = await fs.readFile(filePath);
-        const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }[ext] || 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' });
+        const ext = path.extname(filePath).toLowerCase();
+        const MIME_MAP = {
+          '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+          '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+          '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv',
+          '.json': 'application/json', '.xml': 'application/xml',
+          '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          '.zip': 'application/zip', '.gz': 'application/gzip', '.tar': 'application/x-tar',
+          '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.mp4': 'video/mp4',
+          '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
+          '.md': 'text/markdown', '.yaml': 'text/yaml', '.yml': 'text/yaml',
+        };
+        const mime = MIME_MAP[ext] || 'application/octet-stream';
+        const headers = { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' };
+        if (isDownload) {
+          const fileName = filePath.split('/').pop();
+          headers['Content-Disposition'] = 'attachment; filename="' + fileName + '"';
+        }
+        res.writeHead(200, headers);
         res.end(data);
       } catch (err) {
         res.writeHead(404); res.end('File not found');
