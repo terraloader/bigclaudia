@@ -183,6 +183,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
   },
   chat: {
     sessionReset: 'Session zurückgesetzt. ✓',
+    stopped: 'Gestoppt. ■',
     restarting: 'Server wird neu gestartet… ⟳',
     error: (msg) => `Fehler: ${msg}`,
   },
@@ -204,7 +205,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     messagePlaceholder: 'Nachricht schreiben\u2026 (Enter zum Senden, Shift+Enter = Zeilenumbruch)',
     sendButton: 'Senden',
     stopButton: 'Stopp',
-    chatHint: '/new \u2192 Session zurücksetzen &nbsp;\u00b7&nbsp; /restart \u2192 Server neustarten &nbsp;\u00b7&nbsp; Shift+Enter \u2192 Zeilenumbruch',
+    chatHint: '/new \u2192 Session zurücksetzen &nbsp;\u00b7&nbsp; /stop \u2192 Antwort stoppen &nbsp;\u00b7&nbsp; /restart \u2192 Server neustarten &nbsp;\u00b7&nbsp; Shift+Enter \u2192 Zeilenumbruch',
     sessionReset: 'Session zurückgesetzt.',
     notRunYet: 'noch nicht gelaufen',
     noInstructionsSet: 'Keine Anweisungen gesetzt.',
