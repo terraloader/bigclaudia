@@ -308,6 +308,13 @@ function getHTML(ui) {
   /* Queued messages */
   .msg.queued .msg-bubble { opacity: 0.55; font-style: italic; }
 
+  /* Typing dots animation */
+  @keyframes typingDot { 0%,80%,100%{opacity:.25} 40%{opacity:1} }
+  .typing-dots { display:inline-flex; gap:4px; align-items:center; height:1.2em; }
+  .typing-dots span { width:7px; height:7px; border-radius:50%; background:var(--muted); animation:typingDot 1.4s ease-in-out infinite; }
+  .typing-dots span:nth-child(2) { animation-delay:.2s; }
+  .typing-dots span:nth-child(3) { animation-delay:.4s; }
+
   /* Streaming shimmer on bubble background */
   @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
   .msg-bubble.streaming { position: relative; overflow: hidden; }
@@ -318,7 +325,8 @@ function getHTML(ui) {
   /* Chat input */
   .chat-input-area { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--bg2); flex-shrink: 0; }
   .chat-input-row { display: flex; gap: 10px; align-items: flex-end; }
-  .chat-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: .9rem; resize: none; outline: none; min-height: 42px; max-height: 120px; font-family: inherit; line-height: 1.5; transition: border-color .15s; }
+  .chat-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: .9rem; resize: none; outline: none; min-height: 42px; max-height: 120px; font-family: inherit; line-height: 1.5; transition: border-color .15s; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .chat-input::-webkit-scrollbar { display: none; }
   .chat-input:focus { border-color: var(--accent); }
   .chat-input::placeholder { color: var(--muted); }
   .send-btn { background: var(--accent); color: var(--bg); border: none; border-radius: 10px; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity .15s; }
@@ -660,7 +668,7 @@ function createStreamBubble(id, via) {
       <span class="via-badge \${viaClass}">\${viaLabel}</span>
       <span>\${fmtTime(new Date().toISOString())}</span>
     </div>
-    <div class="msg-bubble streaming" id="bubble-\${id}">&nbsp;</div>\`;
+    <div class="msg-bubble streaming" id="bubble-\${id}"><span class="typing-dots"><span></span><span></span><span></span></span></div>\`;
   document.getElementById('chat-messages').appendChild(div);
 }
 
@@ -668,7 +676,12 @@ function appendStreamChunk(id, text) {
   if (streamBuffers[id] === undefined) return;
   streamBuffers[id] += text;
   const bubble = document.getElementById('bubble-' + id);
-  if (bubble) bubble.innerHTML = marked.parse(streamBuffers[id]);
+  if (bubble) {
+    // Remove typing dots once real content arrives
+    const dots = bubble.querySelector('.typing-dots');
+    if (dots) dots.remove();
+    bubble.innerHTML = marked.parse(streamBuffers[id]);
+  }
 }
 
 function finalizeStreamBubble(id) {
