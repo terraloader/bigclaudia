@@ -1,5 +1,8 @@
 require('dotenv').config({ override: true });
 
+const { validate: validateConfig } = require('./config');
+validateConfig();
+
 const { initHeartbeat, readHeartbeat, appendToHistory, writeHeartbeat, updateInstructions, updateCrontab, needsSummarization, getFileSize, MAX_SIZE } = require('./memory');
 const { askClaude, chatWithClaude, summarizeHistory, killCurrentProcess } = require('./claude');
 const discord = require('./discord');
@@ -12,6 +15,7 @@ const t = require('./i18n');
 
 const fs = require('fs');
 const { saveImage, downloadAndSave, formatImageRefs, formatDocumentRefs, cleanupOldFiles } = require('./images');
+const { stripCustomTags } = require('./utils/tags');
 
 const WHISPER_LOCAL_ENABLED = (process.env.WHISPER_LOCAL_ENABLED || 'false').toLowerCase() === 'true';
 const SUPPRESS_CHANNELS_ON_FOCUS = (process.env.SUPPRESS_CHANNELS_ON_FOCUS || 'false').toLowerCase() === 'true';
@@ -157,36 +161,21 @@ const CRONTAB_GRACE_MINS = parseInt(process.env.CRONTAB_GRACE_MINS || '30', 10);
 let isProcessing = false;
 const messageQueue = [];
 
-async function processNext() {
+function processNext() {
   if (isProcessing || messageQueue.length === 0) return;
   isProcessing = true;
   const { msgId, handler } = messageQueue.shift();
   state.broadcastSSE({ type: 'dequeued', id: msgId });
-  try {
-    await handler();
-  } catch (err) {
-    console.error('[Queue] Handler error:', err.message);
-  } finally {
+  handler().catch(err => console.error('[Queue] Handler error:', err.message)).finally(() => {
     isProcessing = false;
     processNext();
-  }
+  });
 }
 
-async function enqueue(msgId, handler) {
-  if (isProcessing) {
-    messageQueue.push({ msgId, handler });
-    state.broadcastSSE({ type: 'queued', id: msgId });
-    return;
-  }
-  isProcessing = true;
-  try {
-    await handler();
-  } catch (err) {
-    console.error('[Queue] Handler error:', err.message);
-  } finally {
-    isProcessing = false;
-    processNext();
-  }
+function enqueue(msgId, handler) {
+  messageQueue.push({ msgId, handler });
+  state.broadcastSSE({ type: 'queued', id: msgId });
+  processNext();
 }
 
 // ─── ElevenLabs TTS helper ───────────────────────────────────────────────────
@@ -372,7 +361,7 @@ async function handleDiscordMessage(message) {
 
   const msg = state.addChatMessage('user', text, 'discord', imagePaths.length > 0 ? imagePaths : null, documentPaths.length > 0 ? documentPaths : null);
 
-  await enqueue(msg.id, async () => {
+  enqueue(msg.id, async () => {
     const stopTyping = discord.keepTyping(message.channel);
     const chunker = makeDiscordChunker((text) => discord.sendToChannel(message.channel, text));
     try {
@@ -460,7 +449,7 @@ async function handleWhatsappMessage(message) {
   const msg = state.addChatMessage('user', text, 'whatsapp', imagePaths.length > 0 ? imagePaths : null, documentPaths.length > 0 ? documentPaths : null);
   const chat = await message.getChat();
 
-  await enqueue(msg.id, async () => {
+  enqueue(msg.id, async () => {
     const stopTyping = whatsapp.keepTyping(chat);
     const chunker = makeDiscordChunker((chunk) => whatsapp.sendToChat(chat, chunk));
     try {
@@ -506,11 +495,7 @@ async function runHeartbeat() {
         const txt = sm[1].trim();
         if (txt) heartbeatSpeakBlocks.push(txt);
       }
-      const cleanMsg = msg
-        .replace(/<speak>[\s\S]*?<\/speak>/g, '')
-        .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/g, '')
-        .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/g, '')
-        .trim();
+      const cleanMsg = stripCustomTags(msg);
 
       // Show in web UI
       if (cleanMsg) state.addChatMessage('bot', cleanMsg, 'heartbeat');
@@ -561,12 +546,6 @@ function makeDiscordChunker(sendFn = (text) => discord.send(text)) {
       sendFn(text).catch(err => console.warn(t.discord.mirrorFailed, err.message))
     );
   };
-
-  // Strip any remaining custom tags from text before sending to channels
-  const stripCustomTags = (t) => t
-    .replace(/<speak>[\s\S]*?<\/speak>/g, '')
-    .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/g, '')
-    .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/g, '');
 
   const flush = () => {
     if (timer) { clearTimeout(timer); timer = null; }
@@ -701,7 +680,7 @@ async function main() {
       }
     }
 
-    await enqueue(msg.id, async () => {
+    enqueue(msg.id, async () => {
       // Re-check suppression at response time (focus may have changed)
       const suppressNow = shouldSuppressChannels();
       const dChunker = (!suppressNow && discord.isConfigured()) ? makeDiscordChunker() : null;

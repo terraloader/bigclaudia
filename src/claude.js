@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const t = require('./i18n');
+const { stripCustomTags } = require('./utils/tags');
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'opus';
@@ -223,11 +224,7 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
     if (text) speakBlocks.push(text);
   }
 
-  const reply = fullText
-    .replace(/<update_instructions>[\s\S]*?<\/update_instructions>/, '')
-    .replace(/<update_crontab>[\s\S]*?<\/update_crontab>/, '')
-    .replace(/<speak>[\s\S]*?<\/speak>/g, '')
-    .trim();
+  const reply = stripCustomTags(fullText);
 
   return { reply, update_instructions, update_crontab, speakBlocks };
 }
