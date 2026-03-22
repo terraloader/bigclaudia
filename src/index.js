@@ -6,7 +6,7 @@ const discord = require('./discord');
 const whatsapp = require('./whatsapp');
 const elevenlabs = require('./elevenlabs');
 const { transcribe } = require('./whisper');
-const { createServer, recordHeartbeatRun, setMessageProcessor, restartSelf } = require('./webserver');
+const { createServer, recordHeartbeatRun, setMessageProcessor, setOnStop, restartSelf } = require('./webserver');
 const state = require('./state');
 const t = require('./i18n');
 
@@ -136,6 +136,12 @@ async function processMessage(text, via, extraOnDelta = null, context = {}) {
     return { reply: t.chat.sessionReset };
   }
 
+  if (text.trim() === '/stop') {
+    killCurrentProcess();
+    messageQueue.length = 0;
+    return { reply: t.chat.stopped };
+  }
+
   if (text.trim() === '/restart') {
     killCurrentProcess();
     messageQueue.length = 0;
@@ -199,6 +205,16 @@ async function handleDiscordMessage(message) {
 
   if (!text) return;
 
+  // /stop bypasses the queue for instant execution
+  if (text.trim() === '/stop') {
+    killCurrentProcess();
+    messageQueue.length = 0;
+    state.addChatMessage('user', text, 'discord');
+    state.addChatMessage('bot', t.chat.stopped, 'discord');
+    try { await message.channel.send(t.chat.stopped); } catch {}
+    return;
+  }
+
   console.log(t.discord.messageFrom(message.author.tag, text.substring(0, 100)));
 
   const msg = state.addChatMessage('user', text, 'discord');
@@ -225,6 +241,17 @@ async function handleDiscordMessage(message) {
 async function handleWhatsappMessage(message) {
   const text = message.body.trim();
   if (!text) return;
+
+  // /stop bypasses the queue for instant execution
+  if (text === '/stop') {
+    killCurrentProcess();
+    messageQueue.length = 0;
+    const chat = await message.getChat();
+    state.addChatMessage('user', text, 'whatsapp');
+    state.addChatMessage('bot', t.chat.stopped, 'whatsapp');
+    try { await whatsapp.sendToChat(chat, t.chat.stopped); } catch {}
+    return;
+  }
 
   console.log(t.whatsapp.unknownPhone(text.substring(0, 100)).replace('ignored.', '→ received'));
 
@@ -425,9 +452,18 @@ async function main() {
 
   // Register chat processor for Web UI
   setMessageProcessor(async (text) => {
+    // /stop bypasses the queue for instant execution
+    if (text.trim() === '/stop') {
+      killCurrentProcess();
+      messageQueue.length = 0;
+      state.addChatMessage('user', text, 'web');
+      state.addChatMessage('bot', t.chat.stopped, 'web');
+      return;
+    }
+
     const msg = state.addChatMessage('user', text, 'web');
 
-    const isCmd = text.trim() === '/new';
+    const isCmd = text.trim() === '/new' || text.trim() === '/stop' || text.trim() === '/restart';
 
     // Forward user message to Discord immediately
     const forwardToDiscord = !isCmd && discord.isConfigured();
@@ -461,6 +497,9 @@ async function main() {
       if (wChunker) await wChunker.flush();
     });
   });
+
+  // Register stop handler for /api/stop endpoint (clears the message queue)
+  setOnStop(() => { messageQueue.length = 0; });
 
   // Start web server
   createServer();

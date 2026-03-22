@@ -80,9 +80,11 @@ let lastHeartbeatRun = null;
 const botStartTime = new Date().toISOString();
 
 let _messageProcessor = null;
+let _onStop = null;
 
 function recordHeartbeatRun() { lastHeartbeatRun = new Date().toISOString(); }
 function setMessageProcessor(fn) { _messageProcessor = fn; }
+function setOnStop(fn) { _onStop = fn; }
 
 // ─── API data ─────────────────────────────────────────────────────────────────
 
@@ -1316,9 +1318,10 @@ function createServer() {
       return;
     }
 
-    // Stop current Claude process
+    // Stop current Claude process and clear message queue
     if (req.method === 'POST' && url === '/api/stop') {
       killCurrentProcess();
+      if (_onStop) _onStop();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       return;
@@ -1354,4 +1357,4 @@ function createServer() {
   return server;
 }
 
-module.exports = { createServer, recordHeartbeatRun, setMessageProcessor, restartSelf };
+module.exports = { createServer, recordHeartbeatRun, setMessageProcessor, setOnStop, restartSelf };
