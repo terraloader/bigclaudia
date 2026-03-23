@@ -28,10 +28,9 @@ BigClaudia is an autonomous Claude agent with multiple modes of interaction:
 
 ## Before you start
 
-Before you go to setup and starting, there are two things you eventually want to do:
+Before you go to setup and starting, there is one thing you eventually want to do:
 
 - **Disable sleep mode** — Change your energy/power settings so that your computer doesn't go to sleep. Switching monitors off is fine (as long as you don't need screenshots). A later version may implement a built-in caffeine setting.
-- **Bypass permissions** — Set the Claude `settings.json` to `bypassPermissions` as `defaultMode` so the agent doesn't ask for confirmation and just works. If you want to be asked, you can always say so in your message. 😉
 
 ---
 

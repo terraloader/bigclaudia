@@ -35,6 +35,7 @@ async function askClaude(systemPrompt, userMessage) {
     '--system-prompt', systemPrompt,
     '--json-schema', HEARTBEAT_SCHEMA,
     '--no-session-persistence',
+    '--permission-mode', 'bypassPermissions',
   ];
 
   const raw = await runCli(args, userMessage);
@@ -86,6 +87,7 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
     '--model', CLAUDE_MODEL,
     '--system-prompt', systemPrompt,
     '--no-session-persistence',
+    '--permission-mode', 'bypassPermissions',
   ];
 
   let fullText = '';
@@ -234,7 +236,7 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
 async function summarizeHistory(instructions, history) {
   console.log(t.claude.summarizing);
   const prompt = t.claude.summarizePrompt(history);
-  const args = ['--print', '--output-format', 'text', '--model', CLAUDE_MODEL, '--no-session-persistence'];
+  const args = ['--print', '--output-format', 'text', '--model', CLAUDE_MODEL, '--no-session-persistence', '--permission-mode', 'bypassPermissions'];
   const result = await runCli(args, prompt);
   return result.trim() || history;
 }
