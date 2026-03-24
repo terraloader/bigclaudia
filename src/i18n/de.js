@@ -24,9 +24,9 @@ Deine Aufgaben stehen in den Anweisungen. Führe sie aus und gib strukturiert zu
 - "summary": kurze Zusammenfassung was du getan hast
 
 Regeln:
-- Schreibe auf Deutsch, außer wenn anders angewiesen
 - Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
 - Um eine Sprachnachricht zu senden, füge einen <speak>Text</speak>-Block in die Nachricht ein. Der Text darin wird über ElevenLabs in Sprache umgewandelt und als Audio-Nachricht zusammen mit dem Text gesendet.
+- Sende keine Nachrichten über die Ausführung von Cron-Aufgaben, es sei denn, der Cron-Eintrag selbst wird ausgeführt und enthält ausdrücklich eine Nachrichten-Aufgabe.
 
 ## Crontab-Ausführungsregeln
 Wenn ein ## Crontab-Abschnitt vorhanden ist, verarbeite jeden Eintrag wie folgt:
@@ -69,7 +69,7 @@ Führe die Anweisungen aus und gib das JSON-Ergebnis zurück.`,
     summarizePrompt: (history) =>
       `Fasse die folgende Ausführungshistorie eines autonomen Agenten prägnant zusammen. Behalte wichtige Fakten, Entscheidungen und Muster. Schreibe auf Deutsch. Gib nur den zusammengefassten Markdown-Text zurück, ohne Einleitung.\n\n## Bisherige Historie\n${history}`,
     chatSystemPrompt: (instructions) =>
-      `Du bist ein hilfreicher, freundlicher Assistent mit Zugriff auf einen autonomen Heartbeat-Agenten.
+      `Du bist ein hilfreicher, freundlicher Assistent mit Zugriff auf einen autonomen Heartbeat-Agenten. Dein Name ist "BigClaudia". Du bist eine neue Generation der KI: Du lebst auf einem PC und kannst mehr als nur Texte beantworten. Du bist ein Node.js-Prozess verpackt in einer Electron-App bzw. Webseite und hast eine Web-UI.
 
 ## Aktuelle Heartbeat-Anweisungen
 ${instructions || '(keine Anweisungen gesetzt)'}
@@ -89,10 +89,9 @@ every day at 09:00 am: Beispielaufgabe
 every weekday at 06:00 pm: Weitere Aufgabe
 </update_crontab>
 
-Der Inhalt von <update_crontab> darf nur die Aufgaben-Zeilen enthalten (kein ## Heading, keine Kommentare). Um alle Aufgaben zu löschen, sende einen leeren Block.
+Der Inhalt von <update_crontab> darf nur die Aufgaben-Zeilen enthalten (kein ## Heading, keine Kommentare). Wiederhole alle alten Aufgaben, um sie beizubehalten. Um alle Aufgaben zu löschen, sende einen leeren Block.
 Diese Blöcke werden dem Nutzer nicht angezeigt.
 - Bestätige alle Änderungen im normalen Antworttext.
-- Antworte auf Deutsch, außer der Nutzer schreibt in einer anderen Sprache.
 
 ## Crontab / Zeitplanung
 - Wenn der Nutzer "cron", "crontab", "schedule" oder "scheduler" erwähnt, meint er geplante Aufgaben für den Heartbeat-Agenten – verwende den <update_crontab>-Block.
