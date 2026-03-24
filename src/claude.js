@@ -68,7 +68,7 @@ async function askClaude(systemPrompt, userMessage) {
  * @param {{ role: 'user'|'assistant', content: string }[]} history
  * @param {string} heartbeatInstructions
  * @param {(delta: string) => void} [onDelta] - called per text delta
- * @param {{ onThinkingStart?: () => void, onThinkingEnd?: () => void, onToolUseStart?: (name: string) => void, onToolUseInput?: (json: string) => void, onToolUseEnd?: () => void, onRedactedThinking?: () => void }} [callbacks] - optional block callbacks
+ * @param {{ onThinkingStart?: () => void, onThinkingEnd?: (description?: string) => void, onToolUseStart?: (name: string) => void, onToolUseInput?: (json: string) => void, onToolUseEnd?: (description?: string) => void, onRedactedThinking?: (description?: string) => void }} [callbacks] - optional block callbacks
  * @returns {{ reply: string, update_instructions: string }}
  */
 async function chatWithClaude(userMessage, history = [], heartbeatInstructions = '', onDelta = null, callbacks = {}) {
@@ -108,7 +108,8 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
           if (callbacks.onThinkingStart) callbacks.onThinkingStart();
         } else if (blockType === 'redacted_thinking') {
           // Redacted thinking is a single block with no streaming content
-          if (callbacks.onRedactedThinking) callbacks.onRedactedThinking();
+          const description = evt.content_block?.description;
+          if (callbacks.onRedactedThinking) callbacks.onRedactedThinking(description);
         } else if (blockType === 'tool_use') {
           if (isThinking) {
             isThinking = false;
@@ -120,7 +121,8 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
         } else if (blockType === 'text') {
           if (isThinking) {
             isThinking = false;
-            if (callbacks.onThinkingEnd) callbacks.onThinkingEnd();
+            const description = evt.content_block?.description;
+            if (callbacks.onThinkingEnd) callbacks.onThinkingEnd(description);
           }
           if (isToolUse) {
             isToolUse = false;
@@ -139,7 +141,12 @@ async function chatWithClaude(userMessage, history = [], heartbeatInstructions =
       if (evt?.type === 'content_block_stop') {
         if (isToolUse) {
           isToolUse = false;
-          if (callbacks.onToolUseEnd) callbacks.onToolUseEnd();
+          const description = evt?.content_block?.description;
+          if (callbacks.onToolUseEnd) callbacks.onToolUseEnd(description);
+        } else if (isThinking) {
+          isThinking = false;
+          const description = evt?.content_block?.description;
+          if (callbacks.onThinkingEnd) callbacks.onThinkingEnd(description);
         }
       }
 

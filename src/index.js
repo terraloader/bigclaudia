@@ -98,12 +98,12 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
       thinkingChars += delta.length;
       state.streamThinkingChunk(streamId, delta);
     },
-    onThinkingEnd: () => {
+    onThinkingEnd: (blockDescription) => {
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
-      const summary = ui.thinkingSummary(secs, thinkingChars);
+      const summary = blockDescription || ui.thinkingSummary(secs, thinkingChars);
       state.streamThinkingEnd(streamId, summary);
-      // Emit summary for channels
-      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+      // Emit summary for channels (avoid excessive line breaks)
+      if (extraOnDelta) extraOnDelta(summary + '\n');
     },
     onToolUseStart: (name) => {
       blockStartTime = Date.now();
@@ -117,12 +117,12 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
       toolUseInputBuffer += json;
       state.streamToolUseChunk(streamId, json);
     },
-    onToolUseEnd: () => {
+    onToolUseEnd: (blockDescription) => {
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
-      const summary = ui.toolUseSummary(secs, toolUseChars, currentToolName);
+      const summary = blockDescription || ui.toolUseSummary(secs, toolUseChars, currentToolName);
       state.streamToolUseEnd(streamId, summary);
-      // Emit summary for channels
-      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+      // Emit summary for channels (avoid excessive line breaks)
+      if (extraOnDelta) extraOnDelta(summary + '\n');
       // Send images from Read tool results to Discord/WhatsApp
       if (currentToolName === 'Read') {
         const imgPaths = extractImagePaths(toolUseInputBuffer);
@@ -131,11 +131,11 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
         }
       }
     },
-    onRedactedThinking: () => {
-      const summary = ui.redactedThinkingSummary(0);
+    onRedactedThinking: (blockDescription) => {
+      const summary = blockDescription || ui.redactedThinkingSummary(0);
       state.streamRedactedThinking(streamId, summary);
-      // Emit summary for channels
-      if (extraOnDelta) extraOnDelta('\n' + summary + '\n');
+      // Emit summary for channels (avoid excessive line breaks)
+      if (extraOnDelta) extraOnDelta(summary + '\n');
     },
   };
 
@@ -394,7 +394,7 @@ async function handleWhatsappMessage(message) {
         const transcribed = await transcribe(buf, `whatsapp-voice.${ext}`, process.env.WHISPER_LANGUAGE || null);
         const quote = transcribed.split('\n').map((l) => `> ${l}`).join('\n');
         text = text ? `${quote}\n\n${text}` : quote;
-        console.log(`[WhatsApp] Voice message transcribed: ${transcribed.substring(0, 100)}`);
+        console.log(`[WhatsApp] Voice message transcribed: ${transcribed}`);
       }
     } catch (err) {
       console.error(`[WhatsApp] Failed to transcribe voice message: ${err.message}`);
@@ -484,7 +484,7 @@ async function runHeartbeat() {
       t.heartbeat.userMessage(instructions, crontabRaw, history)
     );
 
-    console.log(t.heartbeat.claudeDone, summary.substring(0, 150));
+    console.log(t.heartbeat.claudeDone, summary);
 
     for (const msg of discord_messages) {
       // Extract <speak> blocks from heartbeat messages

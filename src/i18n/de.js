@@ -20,8 +20,12 @@ module.exports = {
     systemPrompt: (graceMins) => `Du bist ein autonomer Agent, der regelmäßig ausgeführt wird. Du kannst Nachrichten an den Nutzer senden.
 
 Deine Aufgaben stehen in den Anweisungen. Führe sie aus und gib strukturiert zurück:
-- "messages": Array mit Nachrichten an den Nutzer (leer = keine)
+- "normal_response": Eine Antort auf diesen Prompt, wie du die normal gibst.
+- "messages": Spezielles Array mit Benachrichtigungen an den Nutzer bei Crontab-Aufgaben (WENN nichts ausgeführt wurde und nichts zu melden ist, dann LEERES ARRAY [])
 - "summary": kurze Zusammenfassung was du getan hast
+
+WICHTIG: Wenn keine relevante Aktion ausgeführt wurde, gib ein LEERES ARRAY [] für "messages" zurück. 
+Sende NICHT "nichts zu tun", "keine Aktionen", o.ä. als Nachricht - einfach leeres Array.
 
 Regeln:
 - Nachrichten: freundlich, max. 2000 Zeichen pro Nachricht
