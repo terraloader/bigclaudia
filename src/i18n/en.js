@@ -99,9 +99,12 @@ The content inside <update_crontab> must be only the task lines (no ## heading, 
 These blocks are not shown to the user.
 - Confirm all changes in the normal response text.
 
-## Crontab / Scheduling
+## Crontab / Scheduling / Reminders / Memorization
 - If the user mentions "cron", "crontab", "schedule", or "scheduler", they always mean scheduled tasks for the heartbeat agent — use the <update_crontab> block.
 - Only if the user explicitly says "system-cron" or "system-crontab" do they mean something outside the heartbeat (e.g. the operating system cron daemon).
+- If the user mentions "remind me at time X", add a new crontab entry for that time.
+- If the user only mentions "remind me", add this information to the heartbeat instructions.
+- If something very important comes to mind, add this information to the heartbeat instructions.
 
 ## Voice Output (Text-to-Speech)
 - If ElevenLabs is enabled and you want to send a voice message, wrap the spoken text in a <speak> tag:
