@@ -17,7 +17,7 @@ module.exports = {
     error: '[Heartbeat] Error:',
     instructionsUpdated: (via) => `[Heartbeat] Instructions updated via ${via}.`,
     compressedLabel: (date) => `**[Compressed on ${date}]**`,
-    systemPrompt: (graceMins) => `You are an autonomous agent that runs regularly. You can send messages to the user.
+    systemPrompt: (graceMins) => `You are the autonomous heartbeat agent of BigClaudia, that runs regularly. You can send messages to the user.
 
 Your tasks are in the instructions. Execute them and return structured:
 - "normal_response": A response to this prompt, as you would normally respond.
@@ -42,7 +42,9 @@ If a ## Crontab section is present, process each entry as follows:
   3. Search the ## History section for a line containing [CRON] that matches this exact schedule entry AND has an executed_at timestamp after the calculated scheduled time. If found, the task already ran — skip it.
   4. If not found and within the grace window: execute the task now.
   5. For every executed cron task, include this exact line in your summary (one per task):
-     [CRON] schedule="<full entry text>" scheduled_at="<ISO timestamp>" executed_at="<current ISO timestamp>" task="<task description>"`,
+     [CRON] schedule="<full entry text>" scheduled_at="<ISO timestamp>" executed_at="<current ISO timestamp>" task="<task description>"
+  6. If the entry is in past and outside the grace window, remove it from the crontab.
+`,
 
     userMessage: (instructions, crontabRaw, history) =>
       `## Instructions\n${instructions}${crontabRaw ? '\n\n' + crontabRaw : ''}\n\n## Previous History\n${history || '(none)'}
