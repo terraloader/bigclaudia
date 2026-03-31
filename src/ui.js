@@ -347,9 +347,15 @@ function getHTML(ui) {
   }
 
   /* Streaming shimmer on bubble background */
-  @keyframes shimmer { 0%{transform:translate3d(-100%,0,0)} 100%{transform:translate3d(100%,0,0)} }
-  .msg-bubble.streaming { position: relative; overflow: hidden; transform: translateZ(0); }
-  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translate3d(-100%,0,0); animation:shimmer 1.8s ease-in-out infinite; pointer-events:none; }
+  /* Travel from -150% to +150% (instead of -100%/+100%) to give iOS Safari enough
+     clearance: iOS can compute translate3d percentages on ::after slightly smaller
+     than the element's actual width, which would make the gradient peak briefly
+     visible at both edges with the tighter ±100% range.
+     transform:translateZ(0) is removed from the parent – it can interfere with
+     overflow:hidden clipping on iOS when combined with the ::after GPU layer. */
+  @keyframes shimmer { 0%{transform:translate3d(-150%,0,0)} 100%{transform:translate3d(150%,0,0)} }
+  .msg-bubble.streaming { position: relative; overflow: hidden; }
+  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translate3d(-150%,0,0); animation:shimmer 2.4s ease-in-out infinite; pointer-events:none; will-change:transform; }
   [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); }
   @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); } }
 
