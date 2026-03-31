@@ -242,6 +242,7 @@ Diese Blöcke werden dem Nutzer nicht angezeigt.
     thinking: 'Denkt nach',
     toolUse: 'Tool-Aufruf',
     redactedThinking: 'Geschwärztes Denken',
+    chars: 'Zeichen',
     thinkingSummary: (seconds, chars) => `Nachgedacht für ${seconds} Sekunden, ${chars} Zeichen lang.`,
     toolUseSummary: (seconds, chars, name) => `Tool aufgerufen${name ? ' (' + name + ')' : ''} für ${seconds} Sekunden, ${chars} Zeichen lang.`,
     redactedThinkingSummary: (seconds) => `Geschwärztes Denken für ${seconds} Sekunden.`,

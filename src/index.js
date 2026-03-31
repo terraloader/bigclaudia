@@ -100,7 +100,9 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
     },
     onThinkingEnd: (blockDescription) => {
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
-      const summary = blockDescription || ui.thinkingSummary(secs, thinkingChars);
+      const summary = blockDescription
+        ? `${blockDescription} (${secs}s, ${thinkingChars} ${ui.chars})`
+        : ui.thinkingSummary(secs, thinkingChars);
       state.streamThinkingEnd(streamId, summary);
       // Emit summary for channels (avoid excessive line breaks)
       if (extraOnDelta) extraOnDelta(summary + '\n');
@@ -119,7 +121,18 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
     },
     onToolUseEnd: (blockDescription) => {
       const secs = Math.round((Date.now() - blockStartTime) / 1000);
-      const summary = blockDescription || ui.toolUseSummary(secs, toolUseChars, currentToolName);
+      let summary = blockDescription;
+      if (!summary) {
+        try {
+          const input = JSON.parse(toolUseInputBuffer);
+          if (input && input.description) summary = input.description;
+        } catch (e) { /* ignore parse errors */ }
+      }
+      if (summary) {
+        summary = `${summary} (${secs}s, ${toolUseChars} ${ui.chars})`;
+      } else {
+        summary = ui.toolUseSummary(secs, toolUseChars, currentToolName);
+      }
       state.streamToolUseEnd(streamId, summary);
       // Emit summary for channels (avoid excessive line breaks)
       if (extraOnDelta) extraOnDelta(summary + '\n');
@@ -132,7 +145,9 @@ async function processWithStreaming(text, via, extraOnDelta = null, imagePaths =
       }
     },
     onRedactedThinking: (blockDescription) => {
-      const summary = blockDescription || ui.redactedThinkingSummary(0);
+      const summary = blockDescription
+        ? `${blockDescription} (${Math.round((Date.now() - blockStartTime) / 1000)}s)`
+        : ui.redactedThinkingSummary(0);
       state.streamRedactedThinking(streamId, summary);
       // Emit summary for channels (avoid excessive line breaks)
       if (extraOnDelta) extraOnDelta(summary + '\n');

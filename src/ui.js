@@ -31,7 +31,7 @@ function getHTML(ui) {
 <html lang="${ui.htmlLang}">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>BigClaudia</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
@@ -347,9 +347,9 @@ function getHTML(ui) {
   }
 
   /* Streaming shimmer on bubble background */
-  @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-  .msg-bubble.streaming { position: relative; overflow: hidden; }
-  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translateX(-100%); animation:shimmer 1.8s ease-in-out infinite; pointer-events:none; }
+  @keyframes shimmer { 0%{transform:translate3d(-100%,0,0)} 100%{transform:translate3d(100%,0,0)} }
+  .msg-bubble.streaming { position: relative; overflow: hidden; transform: translateZ(0); }
+  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translate3d(-100%,0,0); animation:shimmer 1.8s ease-in-out infinite; pointer-events:none; }
   [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); }
   @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); } }
 
@@ -1255,6 +1255,15 @@ function connectSSE() {
       if (cb) cb.scrollTop = cb.scrollHeight;
 
     } else if (data.type === 'history') {
+      // If a stream is currently active, skip the DOM clear — destroying
+      // the stream bubble would cause all further stream_chunk events to be
+      // silently ignored (streamData[id] would be gone), freezing the UI.
+      // The DOM is already up-to-date; we only need to hide the loader.
+      if (Object.keys(streamData).length > 0) {
+        document.getElementById('loading').style.opacity = '0';
+        setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 300);
+        return;
+      }
       document.getElementById('chat-messages').innerHTML = '';
       data.messages.forEach(renderMessage);
       scrollChat();
