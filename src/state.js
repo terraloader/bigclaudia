@@ -13,6 +13,11 @@ let webUiFocused = false;         // true when at least one Web UI tab has focus
 
 const MAX_HISTORY = 20;
 
+// ─── Active stream replay ──────────────────────────────────────────────────────
+// Records all SSE events for the currently active stream so reconnecting
+// clients can replay the full partial response and continue seamlessly.
+let _activeStream = null; // { events: [{type, ...}] } or null
+
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 
 function broadcastSSE(data) {
@@ -56,6 +61,7 @@ function pushHistory(role, content) {
 function clearSession() {
   conversationHistory.length = 0;
   chatLog.length = 0;
+  _activeStream = null;
   broadcastSSE({ type: 'clear' });
 }
 
@@ -66,6 +72,7 @@ function clearSession() {
  */
 function streamStart(via) {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  _activeStream = { events: [{ type: 'stream_start', id, via }] };
   broadcastSSE({ type: 'stream_start', id, via });
   return id;
 }
@@ -74,6 +81,7 @@ function streamStart(via) {
  * Sends a text delta for an ongoing streaming message.
  */
 function streamChunk(id, text) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_chunk', id, text });
   broadcastSSE({ type: 'stream_chunk', id, text });
 }
 
@@ -81,6 +89,7 @@ function streamChunk(id, text) {
  * Signals that thinking has started for a streaming message.
  */
 function streamThinkingStart(id) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_thinking_start', id });
   broadcastSSE({ type: 'stream_thinking_start', id });
 }
 
@@ -88,6 +97,7 @@ function streamThinkingStart(id) {
  * Sends a thinking text chunk for a streaming message (web UI only).
  */
 function streamThinkingChunk(id, text) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_thinking_chunk', id, text });
   broadcastSSE({ type: 'stream_thinking_chunk', id, text });
 }
 
@@ -95,6 +105,7 @@ function streamThinkingChunk(id, text) {
  * Signals that thinking has ended for a streaming message.
  */
 function streamThinkingEnd(id, summary) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_thinking_end', id, summary });
   broadcastSSE({ type: 'stream_thinking_end', id, summary });
 }
 
@@ -104,6 +115,7 @@ function streamThinkingEnd(id, summary) {
  * Signals that a tool_use block has started.
  */
 function streamToolUseStart(id, toolName) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_tool_use_start', id, toolName });
   broadcastSSE({ type: 'stream_tool_use_start', id, toolName });
 }
 
@@ -111,6 +123,7 @@ function streamToolUseStart(id, toolName) {
  * Sends a tool_use input chunk for a streaming message (web UI).
  */
 function streamToolUseChunk(id, text) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_tool_use_chunk', id, text });
   broadcastSSE({ type: 'stream_tool_use_chunk', id, text });
 }
 
@@ -118,6 +131,7 @@ function streamToolUseChunk(id, text) {
  * Signals that a tool_use block has ended.
  */
 function streamToolUseEnd(id, summary) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_tool_use_end', id, summary });
   broadcastSSE({ type: 'stream_tool_use_end', id, summary });
 }
 
@@ -127,6 +141,7 @@ function streamToolUseEnd(id, summary) {
  * Signals a redacted_thinking block (single event, no streaming content).
  */
 function streamRedactedThinking(id, summary) {
+  if (_activeStream) _activeStream.events.push({ type: 'stream_redacted_thinking', id, summary });
   broadcastSSE({ type: 'stream_redacted_thinking', id, summary });
 }
 
@@ -134,6 +149,7 @@ function streamRedactedThinking(id, summary) {
  * Finalizes a streaming message and stores it in the chat log.
  */
 function streamEnd(id, fullText, via) {
+  _activeStream = null; // stream complete — will appear in chatLog for reconnecting clients
   const msg = {
     id,
     source: 'bot',
@@ -144,6 +160,11 @@ function streamEnd(id, fullText, via) {
   chatLog.push(msg);
   broadcastSSE({ type: 'stream_end', id, content: fullText });
 }
+
+/**
+ * Returns the currently active stream replay data (for reconnecting clients).
+ */
+function getActiveStream() { return _activeStream; }
 
 // ─── Console capture ─────────────────────────────────────────────────────────
 
@@ -187,6 +208,7 @@ module.exports = {
   streamToolUseEnd,
   streamRedactedThinking,
   streamEnd,
+  getActiveStream,
   setWebUiFocused,
   isWebUiFocused,
 };

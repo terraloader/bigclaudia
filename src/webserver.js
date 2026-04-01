@@ -171,6 +171,14 @@ function createServer() {
       res.write(`data: ${JSON.stringify({ type: 'history', messages: state.chatLog })}\n\n`);
       // Console-Buffer senden
       res.write(`data: ${JSON.stringify({ type: 'console_history', entries: state.consoleBuffer })}\n\n`);
+      // Wenn gerade ein Stream läuft: alle bisherigen Events replay senden,
+      // damit reconnectende Clients die laufende Antwort sehen und weiterverfolgen können
+      const activeStream = state.getActiveStream();
+      if (activeStream) {
+        for (const event of activeStream.events) {
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+        }
+      }
 
       state.sseClients.add(res);
       req.on('close', () => state.sseClients.delete(res));

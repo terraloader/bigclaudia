@@ -1376,15 +1376,15 @@ function connectSSE() {
       if (cb) cb.scrollTop = cb.scrollHeight;
 
     } else if (data.type === 'history') {
-      // If a stream is currently active, skip the DOM clear — destroying
-      // the stream bubble would cause all further stream_chunk events to be
-      // silently ignored (streamData[id] would be gone), freezing the UI.
-      // The DOM is already up-to-date; we only need to hide the loader.
-      if (Object.keys(streamData).length > 0) {
-        document.getElementById('loading').style.opacity = '0';
-        setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 300);
-        return;
+      // Clean up any stuck streaming bubbles from a dropped connection.
+      // The server will replay the active stream events right after this
+      // history event, so the streaming bubble will be recreated correctly.
+      for (const id of Object.keys(streamData)) {
+        const bubble = document.getElementById('msg-' + id);
+        if (bubble) bubble.remove();
+        delete streamData[id];
       }
+      setWaiting(false);
       document.getElementById('chat-messages').innerHTML = '';
       data.messages.forEach(renderMessage);
       scrollChat();
