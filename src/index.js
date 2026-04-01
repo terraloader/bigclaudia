@@ -513,7 +513,11 @@ async function runHeartbeat() {
       const cleanMsg = stripCustomTags(msg);
 
       // Show in web UI
-      if (cleanMsg) state.addChatMessage('bot', cleanMsg, 'heartbeat');
+      if (cleanMsg) {
+        state.addChatMessage('bot', cleanMsg, 'heartbeat');
+        // Also add to conversation history so Claude can reference heartbeat messages
+        state.pushHistory('assistant', cleanMsg);
+      }
       // Mirror to Discord if configured (unless suppressed by focus)
       if (cleanMsg && discord.isConfigured() && !shouldSuppressChannels()) {
         discord.send(cleanMsg).catch((err) => console.error(t.discord.sendError, err.message));

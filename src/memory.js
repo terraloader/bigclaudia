@@ -1,107 +1,211 @@
 const fs = require('fs').promises;
 const path = require('path');
 
-const HEARTBEAT_FILE = path.join(__dirname, '..', 'heartbeat.md');
+const SOUL_FILE             = path.join(__dirname, '..', 'SOUL.md');
+const SCHEDULE_FILE         = path.join(__dirname, '..', 'SCHEDULE.md');
+const SCHEDULE_HISTORY_FILE = path.join(__dirname, '..', 'SCHEDULE_HISTORY.md');
+
+// Legacy file (used only for migration in initHeartbeat)
+const HEARTBEAT_FILE         = path.join(__dirname, '..', 'heartbeat.md');
 const HEARTBEAT_EXAMPLE_FILE = path.join(__dirname, '..', 'heartbeat.md.example');
+
 const MAX_SIZE = parseInt(process.env.HEARTBEAT_MAX_SIZE || '50000', 10);
 
-
 /**
- * Creates heartbeat.md from heartbeat.md.example if it does not exist.
- * Returns true if the file was created, false if it already existed.
+ * Reads a file safely, returning empty string on error.
  */
-async function initHeartbeat() {
+async function readFileSafe(filePath) {
   try {
-    await fs.access(HEARTBEAT_FILE);
-    return false;
+    return await fs.readFile(filePath, 'utf-8');
   } catch {
-    await fs.copyFile(HEARTBEAT_EXAMPLE_FILE, HEARTBEAT_FILE);
-    return true;
+    return '';
   }
 }
 
 /**
- * Reads heartbeat.md and extracts instructions, crontab section, and history in one read.
+ * Extracts the body of a file below the first <!-- comment --> header line.
+ * Falls back to the full content if no such header is found.
+ */
+function extractBody(content) {
+  const match = content.match(/^#[^\n]*\n(?:<!--[^>]*-->\n)?\n?([\s\S]*)$/);
+  return match ? match[1].trim() : content.trim();
+}
+
+/**
+ * Extracts crontab task lines from a crontabRaw string (legacy format).
+ * crontabRaw looks like: "\n\n## Crontab\n<!-- ... -->\n\n<lines>"
+ */
+function parseCrontabLines(crontabRaw) {
+  if (!crontabRaw) return '';
+  const match = crontabRaw.match(/## Crontab\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)$/);
+  return match ? match[1].trim() : '';
+}
+
+/**
+ * Creates SOUL.md, SCHEDULE.md, and SCHEDULE_HISTORY.md if they do not exist.
+ * Migrates content from the legacy heartbeat.md if available.
+ * Returns true if any file was created, false if all already existed.
+ */
+async function initHeartbeat() {
+  const missing = await Promise.all(
+    [SOUL_FILE, SCHEDULE_FILE, SCHEDULE_HISTORY_FILE].map(f =>
+      fs.access(f).then(() => false).catch(() => true)
+    )
+  );
+
+  if (!missing.some(Boolean)) return false;
+
+  // Try to read legacy heartbeat.md for migration
+  let instructions = '';
+  let crontabLines = '';
+  let history = '';
+
+  let legacyContent = '';
+  try { legacyContent = await fs.readFile(HEARTBEAT_FILE, 'utf-8'); } catch {
+    try { legacyContent = await fs.readFile(HEARTBEAT_EXAMPLE_FILE, 'utf-8'); } catch {}
+  }
+
+  if (legacyContent) {
+    const im = legacyContent.match(/## Instructions\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)(?=\n## |$)/);
+    const cm = legacyContent.match(/## Crontab\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)(?=\n## |$)/);
+    const hm = legacyContent.match(/## History\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)$/);
+    instructions = im ? im[1].trim() : '';
+    crontabLines = cm ? cm[1].trim() : '';
+    history      = hm ? hm[1].trim() : '';
+  }
+
+  if (missing[0]) {
+    await fs.writeFile(
+      SOUL_FILE,
+      `# Soul\n<!-- BigClaudia instructions -->\n\n${instructions}\n`,
+      'utf-8'
+    );
+  }
+  if (missing[1]) {
+    await fs.writeFile(
+      SCHEDULE_FILE,
+      `# Schedule\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${crontabLines}\n`,
+      'utf-8'
+    );
+  }
+  if (missing[2]) {
+    await fs.writeFile(
+      SCHEDULE_HISTORY_FILE,
+      `# Schedule History\n<!-- Execution history is automatically appended here -->\n\n${history}\n`,
+      'utf-8'
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Reads SOUL.md, SCHEDULE.md, and SCHEDULE_HISTORY.md and returns the parsed
+ * sections in the same shape as before (instructions, crontabRaw, history, raw).
  */
 async function readHeartbeat() {
-  const content = await fs.readFile(HEARTBEAT_FILE, 'utf-8');
+  const [soulContent, scheduleContent, historyContent] = await Promise.all([
+    readFileSafe(SOUL_FILE),
+    readFileSafe(SCHEDULE_FILE),
+    readFileSafe(SCHEDULE_HISTORY_FILE),
+  ]);
 
-  const instructionsMatch = content.match(
-    /## Instructions\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)(?=\n## |$)/
-  );
-  const crontabMatch = content.match(
-    /\n(## Crontab[\s\S]*?)(?=\n## History|$)/
-  );
-  const historyMatch = content.match(
-    /## History\s*(?:<!--[^>]*-->\s*)?([\s\S]*?)$/
-  );
+  const instructions = extractBody(soulContent);
+  const crontabLines = extractBody(scheduleContent);
+  const history      = extractBody(historyContent);
 
-  const instructions = instructionsMatch ? instructionsMatch[1].trim() : '';
-  const crontabRaw = crontabMatch ? '\n\n' + crontabMatch[1].trimEnd() : '';
-  const history = historyMatch ? historyMatch[1].trim() : '';
+  const crontabRaw = crontabLines
+    ? `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${crontabLines}`
+    : `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->`;
 
-  return { instructions, crontabRaw, history, raw: content };
+  // Build a virtual "raw" for any code that still reads the full content
+  const raw = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
+
+  return { instructions, crontabRaw, history, raw };
 }
 
 /**
- * Appends a new entry to the history in heartbeat.md.
+ * Appends a new timestamped entry to SCHEDULE_HISTORY.md.
  */
 async function appendToHistory(summary) {
-  const { instructions, crontabRaw, history } = await readHeartbeat();
-  const timestamp = new Date().toISOString();
-  const newEntry = `\n### ${timestamp}\n${summary}\n`;
-  const updatedHistory = history + newEntry;
+  const historyContent = await readFileSafe(SCHEDULE_HISTORY_FILE);
+  const history = extractBody(historyContent);
 
-  const newContent = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${updatedHistory}`;
-  await fs.writeFile(HEARTBEAT_FILE, newContent, 'utf-8');
+  const timestamp = new Date().toISOString();
+  const newEntry   = `\n### ${timestamp}\n${summary}\n`;
+  const updated    = history + newEntry;
+
+  await fs.writeFile(
+    SCHEDULE_HISTORY_FILE,
+    `# Schedule History\n<!-- Execution history is automatically appended here -->\n\n${updated}`,
+    'utf-8'
+  );
 }
 
 /**
- * Overwrites heartbeat.md completely (after summarization).
+ * Overwrites all three files completely (used after history summarization).
  */
 async function writeHeartbeat(instructions, summarizedHistory, crontabRaw = '') {
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n\n${summarizedHistory}\n`;
-  await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
+  const crontabLines = parseCrontabLines(crontabRaw);
+
+  await Promise.all([
+    fs.writeFile(
+      SOUL_FILE,
+      `# Soul\n<!-- BigClaudia instructions -->\n\n${instructions}\n`,
+      'utf-8'
+    ),
+    fs.writeFile(
+      SCHEDULE_FILE,
+      `# Schedule\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${crontabLines}\n`,
+      'utf-8'
+    ),
+    fs.writeFile(
+      SCHEDULE_HISTORY_FILE,
+      `# Schedule History\n<!-- Execution history is automatically appended here -->\n\n${summarizedHistory}\n`,
+      'utf-8'
+    ),
+  ]);
 }
 
 /**
- * Returns true if the file exceeds the maximum size.
+ * Returns true if SCHEDULE_HISTORY.md exceeds the maximum size.
  */
 async function needsSummarization() {
-  const stats = await fs.stat(HEARTBEAT_FILE);
+  const stats = await fs.stat(SCHEDULE_HISTORY_FILE);
   return stats.size > MAX_SIZE;
 }
 
 /**
- * Returns the current file size in bytes.
+ * Returns the current size of SCHEDULE_HISTORY.md in bytes.
  */
 async function getFileSize() {
-  const stats = await fs.stat(HEARTBEAT_FILE);
+  const stats = await fs.stat(SCHEDULE_HISTORY_FILE);
   return stats.size;
 }
 
 /**
- * Replaces only the instructions section, leaving history unchanged.
+ * Replaces only the instructions section (SOUL.md), leaving schedule and history unchanged.
  */
 async function updateInstructions(newInstructions) {
-  const { crontabRaw, history } = await readHeartbeat();
-  // Strip any ## Crontab section Claude may have included in newInstructions
-  // to prevent duplication (the existing one is preserved via crontabRaw).
-  const pureInstructions = newInstructions.replace(/\n*## Crontab[\s\S]*$/, '').trim();
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${pureInstructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
-  await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
+  // Strip any ## Crontab section Claude may have included to prevent duplication
+  const pure = newInstructions.replace(/\n*## Crontab[\s\S]*$/, '').trim();
+  await fs.writeFile(
+    SOUL_FILE,
+    `# Soul\n<!-- BigClaudia instructions -->\n\n${pure}\n`,
+    'utf-8'
+  );
 }
 
 /**
- * Replaces only the crontab section, leaving instructions and history unchanged.
+ * Replaces only the crontab section (SCHEDULE.md), leaving soul and history unchanged.
  */
 async function updateCrontab(newCrontabContent) {
-  const { instructions, history } = await readHeartbeat();
-  const crontabRaw = newCrontabContent.trim()
-    ? `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${newCrontabContent.trim()}`
-    : `\n\n## Crontab\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->`;
-  const content = `# Heartbeat\n\n## Instructions\n<!-- Current instructions for the agent -->\n\n${instructions}${crontabRaw}\n\n## History\n<!-- Execution history is automatically appended here -->\n${history ? '\n' + history : ''}`;
-  await fs.writeFile(HEARTBEAT_FILE, content, 'utf-8');
+  const crontabLines = newCrontabContent.trim();
+  await fs.writeFile(
+    SCHEDULE_FILE,
+    `# Schedule\n<!-- Scheduled tasks. Format: every [day|weekday] at HH:MM [am|pm]: task description -->\n\n${crontabLines}\n`,
+    'utf-8'
+  );
 }
 
 module.exports = {
