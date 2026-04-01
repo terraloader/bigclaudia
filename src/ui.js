@@ -385,11 +385,11 @@ function getHTML(ui) {
      their initial size, so a growing .msg-bubble would leave the shimmer stuck at
      the original small dimensions. background-position forces per-frame painting
      (no composited layer), so Safari recalculates correctly as the bubble grows. */
-  @keyframes shimmer { 0%{background-position:-100% 0} 100%{background-position:200% 0} }
+  @keyframes shimmer { 0%{background-position:250% 0} 100%{background-position:50% 0} }
   .msg-bubble.streaming { position: relative; overflow: hidden; }
-  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); background-size:200% 100%; background-position:-100% 0; animation:shimmer 2.4s ease-in-out infinite; pointer-events:none; }
-  [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); background-size:200% 100%; }
-  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); background-size:200% 100%; } }
+  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 10%, transparent 20%); background-size:200% 100%; background-position:250% 0; animation:shimmer 2.4s ease-in-out infinite; pointer-events:none; }
+  [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 10%, transparent 20%); background-size:200% 100%; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 10%, transparent 20%); background-size:200% 100%; } }
 
   /* Chat input */
   .chat-input-area { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--bg2); flex-shrink: 0; }
