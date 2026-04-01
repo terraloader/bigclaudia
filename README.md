@@ -300,7 +300,7 @@ Open `http://localhost:3000` in your browser.
 - **Image and document uploads** via drag & drop or file picker
 - **Voice message playback** for ElevenLabs-generated audio
 - Markdown rendering via `marked.js`
-- Keyboard shortcuts: `Enter` to send, `Shift+Enter` for new line, `/new` to reset, `/stop` to stop
+- Keyboard shortcuts: `Shift+Enter` to send, `Enter` for new line, `/new` to reset, `/stop` to stop
 
 <p align="center"><img src="ui-chat.png" width="700" /></p>
 

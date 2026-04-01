@@ -253,6 +253,7 @@ function getHTML(ui) {
   .thinking-block .thinking-content {
     padding: 4px 6px;
     color: var(--muted);
+    font-size: 0.9em;
     font-style: italic;
     white-space: pre-wrap;
     word-break: break-word;
@@ -307,10 +308,11 @@ function getHTML(ui) {
     white-space: normal;
     overflow-x: auto;
   }
+  .tool-use-block .tool-use-content table { font-size: inherit; }
   .json-table {
     border-collapse: collapse;
     width: 100%;
-    font-size: .82rem;
+    font-size: .875rem;
     margin: 2px 0;
   }
   .json-table td {
@@ -325,7 +327,7 @@ function getHTML(ui) {
   [data-theme="light"] .json-table tbody tr:hover { background: rgba(0,0,0,.03); }
   .json-table td:first-child {
     color: var(--accent);
-    font-size: .75rem;
+    font-size: 0.9em;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .3px;
@@ -1603,9 +1605,25 @@ async function sendMessage() {
 
 // Input events
 const input = document.getElementById('chat-input');
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// Mobile: Shift+Enter = senden, Enter = Zeilenumbruch
+// Desktop: Enter = senden, Shift+Enter = Zeilenumbruch
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Enter') {
+    if (isMobile) {
+      if (e.shiftKey) { e.preventDefault(); sendMessage(); }
+    } else {
+      if (!e.shiftKey) { e.preventDefault(); sendMessage(); }
+    }
+  }
 });
+
+// Hint je nach Gerät aktualisieren
+if (isMobile && STRINGS.chatHintMobile) {
+  const hintEl = document.querySelector('.chat-hint');
+  if (hintEl) hintEl.innerHTML = STRINGS.chatHintMobile;
+}
 input.addEventListener('input', () => {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 120) + 'px';
