@@ -301,6 +301,35 @@ function getHTML(ui) {
     max-height: 300px;
     overflow-y: auto;
   }
+  .tool-use-block .tool-use-content.has-table {
+    font-family: inherit;
+    white-space: normal;
+  }
+  .json-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: .82rem;
+    margin: 4px 0;
+  }
+  .json-table td {
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+    word-break: break-word;
+  }
+  .json-table tr:last-child td { border-bottom: none; }
+  .json-table tbody tr:hover { background: rgba(255,255,255,.03); }
+  [data-theme="light"] .json-table tbody tr:hover { background: rgba(0,0,0,.03); }
+  .json-table td:first-child {
+    color: var(--accent);
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    white-space: nowrap;
+    padding-right: 14px;
+  }
   .tool-use-block .tool-use-thumbnail {
     display: block;
     max-width: 240px;
@@ -760,7 +789,8 @@ function createStreamBubble(id, via) {
     currentTextDiv: null,
     currentTextContent: '',
     currentThinkingIndex: -1,
-    thinkingBuffers: {}
+    thinkingBuffers: {},
+    pendingCollapseBlock: null
   };
 
   const viaClass = via === 'discord' ? 'via-discord' : via === 'whatsapp' ? 'via-whatsapp' : 'via-web';
@@ -778,11 +808,83 @@ function createStreamBubble(id, via) {
   document.getElementById('chat-messages').appendChild(div);
 }
 
+// ── Pending-collapse helper ──────────────────────────────────────────────────
+// Non-text blocks (thinking, tool-use) are NOT collapsed immediately when they
+// end.  Instead, we store them as "pending" and collapse only when the next
+// real content chunk (text or another non-text block) arrives.
+
+function flushPendingCollapse(id) {
+  const data = streamData[id];
+  if (!data || !data.pendingCollapseBlock) return;
+  const block = data.pendingCollapseBlock;
+  data.pendingCollapseBlock = null;
+  if (block.classList.contains('thinking-block')) {
+    collapseThinkingBlock(block);
+  } else if (block.classList.contains('tool-use-block')) {
+    collapseToolUseBlock(block);
+  }
+}
+
+// ── Partial-JSON helpers ─────────────────────────────────────────────────────
+
+function tryParsePartialJson(text) {
+  if (!text || !text.trim().startsWith('{')) return null;
+  // 1. Try verbatim
+  try { return JSON.parse(text); } catch(e) {}
+  // 2. Try capping with closing brace(s) for nearly-complete objects
+  try { return JSON.parse(text + '}'); } catch(e) {}
+  try { return JSON.parse(text + '"}'); } catch(e) {}
+  try { return JSON.parse(text + '"}}'); } catch(e) {}
+  // 3. Extract already-completed key-value pairs via regex
+  const result = {};
+  // Matches "key": "string value" or "key": number/bool/null
+  const reStr = /"([^"\\\\]+)"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"/g;
+  const reVal = /"([^"\\\\]+)"\\s*:\\s*(true|false|null|-?\\d+(?:\\.\\d+)?)/g;
+  let m;
+  while ((m = reStr.exec(text)) !== null) result[m[1]] = m[2];
+  while ((m = reVal.exec(text)) !== null) {
+    try { result[m[1]] = JSON.parse(m[2]); } catch(e) { result[m[1]] = m[2]; }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderJsonAsTable(obj) {
+  const entries = Object.entries(obj).filter(([k]) => k !== 'description');
+  if (entries.length === 0) return '';
+  const rows = entries.map(([k, v]) => {
+    const valStr = typeof v === 'string' ? escapeHtml(v) : escapeHtml(JSON.stringify(v));
+    return '<tr><td>' + escapeHtml(k) + '</td><td>' + valStr + '</td></tr>';
+  }).join('');
+  return '<table class="json-table"><tbody>' + rows + '</tbody></table>';
+}
+
+function updateToolUseContentEl(el, jsonText) {
+  const parsed = tryParsePartialJson(jsonText);
+  if (parsed) {
+    const tableHtml = renderJsonAsTable(parsed);
+    if (tableHtml) {
+      el.innerHTML = tableHtml;
+      el.classList.add('has-table');
+      return;
+    }
+  }
+  el.classList.remove('has-table');
+  el.textContent = jsonText;
+}
+
 function showThinkingIndicator(id) {
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
   const data = streamData[id];
   if (!data) return;
+  // Collapse any previously pending block before starting the new one
+  flushPendingCollapse(id);
   // Remove typing dots
   const dots = bubble.querySelector('.typing-dots');
   if (dots) dots.remove();
@@ -832,8 +934,8 @@ function hideThinkingIndicator(id, summary) {
           summaryEl.innerHTML = '<span class="chevron">›</span> <span class="brain">🧠</span> ' + summary;
         }
       }
-      // Collapse with smooth animation
-      collapseThinkingBlock(block);
+      // Don't collapse yet — wait until the next content chunk arrives
+      data.pendingCollapseBlock = block;
     }
   }
   // Reset text segment so next text creates a new div after this thinking block
@@ -892,6 +994,8 @@ function showToolUseIndicator(id, toolName) {
   if (!bubble) return;
   const data = streamData[id];
   if (!data) return;
+  // Collapse any previously pending block before starting the new one
+  flushPendingCollapse(id);
   const dots = bubble.querySelector('.typing-dots');
   if (dots) dots.remove();
   data.currentTextDiv = null;
@@ -915,7 +1019,7 @@ function appendToolUseChunk(id, text) {
   data.thinkingBuffers[idx] += text;
   const el = document.getElementById('tool-use-content-' + id + '-' + idx);
   if (el) {
-    el.textContent = data.thinkingBuffers[idx];
+    updateToolUseContentEl(el, data.thinkingBuffers[idx]);
     el.scrollTop = el.scrollHeight;
   }
 }
@@ -965,6 +1069,9 @@ function hideToolUseIndicator(id, summary) {
           summaryEl.innerHTML = '<span class="chevron">›</span> <span>🔧</span> ' + summary;
         }
       }
+      // Finalize JSON display (complete parse now that streaming is done)
+      const contentEl = block.querySelector('.tool-use-content');
+      if (contentEl) updateToolUseContentEl(contentEl, content);
       // Detect image paths and add thumbnails only for Read tool (outside wrapper so visible when collapsed)
       const isReadTool = block.dataset.toolName === 'Read';
       const imgPaths = isReadTool ? extractImagePaths(content) : [];
@@ -979,7 +1086,8 @@ function hideToolUseIndicator(id, summary) {
           block.appendChild(img);
         });
       }
-      collapseToolUseBlock(block);
+      // Don't collapse yet — wait until the next content chunk arrives
+      data.pendingCollapseBlock = block;
     }
   }
   data.currentTextDiv = null;
@@ -1047,6 +1155,8 @@ function appendStreamChunk(id, text) {
   if (!data) return;
   const bubble = document.getElementById('bubble-' + id);
   if (!bubble) return;
+  // Collapse any previously pending non-text block now that real text is arriving
+  flushPendingCollapse(id);
   // Remove typing dots once real content arrives
   const dots = bubble.querySelector('.typing-dots');
   if (dots) dots.remove();
@@ -1063,6 +1173,8 @@ function appendStreamChunk(id, text) {
 }
 
 function finalizeStreamBubble(id, cleanContent) {
+  // Collapse any still-pending non-text block before tearing down stream state
+  flushPendingCollapse(id);
   delete streamData[id];
   const bubble = document.getElementById('bubble-' + id);
   if (bubble) {
