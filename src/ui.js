@@ -380,17 +380,16 @@ function getHTML(ui) {
   }
 
   /* Streaming shimmer on bubble background */
-  /* Travel from -150% to +150% (instead of -100%/+100%) to give iOS Safari enough
-     clearance: iOS can compute translate3d percentages on ::after slightly smaller
-     than the element's actual width, which would make the gradient peak briefly
-     visible at both edges with the tighter ±100% range.
-     transform:translateZ(0) is removed from the parent – it can interfere with
-     overflow:hidden clipping on iOS when combined with the ::after GPU layer. */
-  @keyframes shimmer { 0%{transform:translate3d(-150%,0,0)} 100%{transform:translate3d(150%,0,0)} }
+  /* Use background-position animation instead of transform/translate3d to avoid
+     iOS Safari compositor layer caching: Safari freezes GPU-promoted layers at
+     their initial size, so a growing .msg-bubble would leave the shimmer stuck at
+     the original small dimensions. background-position forces per-frame painting
+     (no composited layer), so Safari recalculates correctly as the bubble grows. */
+  @keyframes shimmer { 0%{background-position:-100% 0} 100%{background-position:200% 0} }
   .msg-bubble.streaming { position: relative; overflow: hidden; }
-  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); transform:translate3d(-150%,0,0); animation:shimmer 2.4s ease-in-out infinite; pointer-events:none; will-change:transform; }
-  [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); }
-  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); } }
+  .msg-bubble.streaming::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,.09) 50%, transparent 100%); background-size:200% 100%; background-position:-100% 0; animation:shimmer 2.4s ease-in-out infinite; pointer-events:none; }
+  [data-theme="light"] .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); background-size:200% 100%; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .msg-bubble.streaming::after { background:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.08) 50%, transparent 100%); background-size:200% 100%; } }
 
   /* Chat input */
   .chat-input-area { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--bg2); flex-shrink: 0; }
