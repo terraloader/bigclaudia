@@ -149,6 +149,7 @@ function getHTML(ui) {
   .chat-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .9rem; }
 
   .msg { display: flex; flex-direction: column; max-width: 70%; }
+  .msg.bot:has(.json-table), .msg.bot:has(.msg-bubble table) { max-width: min(92%, calc(100% - 16px)); }
   .msg.user { align-self: flex-end; align-items: flex-end; }
   .msg.bot  { align-self: flex-start; align-items: flex-start; }
 
@@ -265,13 +266,13 @@ function getHTML(ui) {
 
   /* Tool-use block (collapsible, inline in message flow) */
   .tool-use-block {
-    margin: 4px 0;
+    margin: 2px 0;
     overflow: hidden;
     font-size: 0.85em;
   }
   .tool-use-block .tool-use-summary {
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 2px 6px;
     color: var(--muted);
     font-size: 0.9em;
     user-select: none;
@@ -292,7 +293,7 @@ function getHTML(ui) {
   .tool-use-block .tool-use-content-wrapper { overflow: hidden; }
   .tool-use-block.collapsed .tool-use-content-wrapper { max-height: 0; }
   .tool-use-block .tool-use-content {
-    padding: 4px 6px;
+    padding: 2px 6px;
     color: var(--muted);
     font-family: monospace;
     font-size: 0.9em;
@@ -304,15 +305,16 @@ function getHTML(ui) {
   .tool-use-block .tool-use-content.has-table {
     font-family: inherit;
     white-space: normal;
+    overflow-x: auto;
   }
   .json-table {
     border-collapse: collapse;
     width: 100%;
     font-size: .82rem;
-    margin: 4px 0;
+    margin: 2px 0;
   }
   .json-table td {
-    padding: 6px 10px;
+    padding: 3px 8px;
     text-align: left;
     vertical-align: top;
     border-bottom: 1px solid var(--border);
