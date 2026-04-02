@@ -133,6 +133,22 @@ function getHTML(ui) {
   .console-panel { background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 12px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
   [data-theme="light"] .console-panel { background: #1e1e2e; }
   @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .console-panel { background: #1e1e2e; } }
+
+  /* ── Mobile / Responsive ── */
+  @media (max-width: 768px) {
+    /* Tabs: horizontal scroll statt Überlauf */
+    .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-shrink: 0; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 10px 14px; font-size: .85rem; white-space: nowrap; }
+
+    /* Dashboard: 2-Spalten → 1-Spalte, scrollbar */
+    #view-dashboard { flex-direction: column; overflow-y: auto; }
+    aside { width: 100%; border-right: none; border-bottom: 1px solid var(--border); flex-shrink: 0; overflow-y: visible; }
+    main { flex: none; overflow: visible; padding-bottom: 24px; }
+    .timeline-wrapper { flex: none; min-height: 0; overflow: visible; }
+    .timeline { overflow-y: visible; max-height: none; flex: none; }
+    .console-panel { flex: none; min-height: 220px; overflow: hidden; }
+  }
   .console-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
   .console-header .card-title { margin-bottom: 0; color: #8b949e; }
 
